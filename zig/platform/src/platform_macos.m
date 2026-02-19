@@ -2,7 +2,6 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "platform.h"
-#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -44,9 +43,12 @@ static TesseraView *g_view = nil;
 static bool g_initialized = false;
 static bool g_seen_close = false;
 
-bool platform_init_window(const platform_config *config) {
-  if (config == NULL || config->abi_version != PLATFORM_ABI_VERSION) {
-    return false;
+uint32_t platform_get_abi_version(void) { return PLATFORM_ABI_VERSION; }
+
+uint8_t platform_init_window(const platform_config *config) {
+  if (config == NULL || config->struct_size < sizeof(platform_config) ||
+      config->abi_version != PLATFORM_ABI_VERSION) {
+    return PLATFORM_FALSE;
   }
 
   @autoreleasepool {
@@ -74,16 +76,18 @@ bool platform_init_window(const platform_config *config) {
     [NSApp activateIgnoringOtherApps:YES];
 
     g_initialized = true;
-    return true;
+    return PLATFORM_TRUE;
   }
 }
 
-bool platform_poll_event(platform_event *out_event) {
-  if (!g_initialized || out_event == NULL) {
-    return false;
+uint8_t platform_poll_event(platform_event *out_event) {
+  if (!g_initialized || out_event == NULL ||
+      out_event->struct_size < sizeof(platform_event)) {
+    return PLATFORM_FALSE;
   }
 
   memset(out_event, 0, sizeof(*out_event));
+  out_event->struct_size = sizeof(platform_event);
 
   @autoreleasepool {
     NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
@@ -95,9 +99,9 @@ bool platform_poll_event(platform_event *out_event) {
       if (g_seen_close) {
         out_event->kind = PLATFORM_EVENT_QUIT;
         g_seen_close = false;
-        return true;
+        return PLATFORM_TRUE;
       }
-      return false;
+      return PLATFORM_FALSE;
     }
 
     if ([event type] == NSEventTypeKeyDown) {
@@ -107,7 +111,7 @@ bool platform_poll_event(platform_event *out_event) {
       } else {
         out_event->kind = PLATFORM_EVENT_KEY_DOWN;
       }
-      return true;
+      return PLATFORM_TRUE;
     }
 
     if ([event type] == NSEventTypeKeyUp) {
@@ -117,12 +121,12 @@ bool platform_poll_event(platform_event *out_event) {
       } else {
         out_event->kind = PLATFORM_EVENT_KEY_UP;
       }
-      return true;
+      return PLATFORM_TRUE;
     }
 
     if ([event type] == NSEventTypeApplicationDefined && [event subtype] == 0) {
       out_event->kind = PLATFORM_EVENT_QUIT;
-      return true;
+      return PLATFORM_TRUE;
     }
 
     [NSApp sendEvent:event];
@@ -130,20 +134,21 @@ bool platform_poll_event(platform_event *out_event) {
 
     if (![g_window isVisible]) {
       out_event->kind = PLATFORM_EVENT_QUIT;
-      return true;
+      return PLATFORM_TRUE;
     }
 
     NSRect bounds = [g_view bounds];
     out_event->kind = PLATFORM_EVENT_RESIZE;
     out_event->width = (uint32_t)bounds.size.width;
     out_event->height = (uint32_t)bounds.size.height;
-    return true;
+    return PLATFORM_TRUE;
   }
 }
 
-bool platform_present_frame(const platform_frame *frame) {
-  if (!g_initialized || frame == NULL || frame->pixels_rgba8 == NULL) {
-    return false;
+uint8_t platform_present_frame(const platform_frame *frame) {
+  if (!g_initialized || frame == NULL || frame->struct_size < sizeof(platform_frame) ||
+      frame->pixels_rgba8 == NULL) {
+    return PLATFORM_FALSE;
   }
 
   @autoreleasepool {
@@ -153,7 +158,7 @@ bool platform_present_frame(const platform_frame *frame) {
     g_view.stride = frame->stride_bytes;
     [g_view setNeedsDisplay:YES];
     [g_view displayIfNeeded];
-    return true;
+    return PLATFORM_TRUE;
   }
 }
 

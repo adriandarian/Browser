@@ -1,15 +1,21 @@
 #ifndef TESSERA_PLATFORM_H
 #define TESSERA_PLATFORM_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 // NOTE: This header is the ABI contract between Rust and Zig.
-// - Keep all structs POD and explicitly-sized.
-// - Append new fields only at the end, and version-gate behavior.
+//
+// ABI stability rules:
+// - All structs must remain plain-old-data with fixed-width integer types.
+// - Do not use C `bool` in function signatures or struct fields; use uint8_t.
+// - Structs use native C ABI alignment (`repr(C)` in Rust); do not pack structs.
+// - To extend a struct safely, append trailing fields and include a size field.
 // - Never reorder or remove existing fields.
 // - Bump PLATFORM_ABI_VERSION on any breaking ABI change.
-#define PLATFORM_ABI_VERSION 1u
+#define PLATFORM_ABI_VERSION 2u
+
+#define PLATFORM_FALSE ((uint8_t)0u)
+#define PLATFORM_TRUE ((uint8_t)1u)
 
 enum platform_event_kind {
   PLATFORM_EVENT_NONE = 0,
@@ -25,6 +31,9 @@ enum platform_key_code {
 };
 
 typedef struct platform_config {
+  // Size in bytes of this struct provided by the caller.
+  // Allows forward/backward-compatible trailing field extensions.
+  uint32_t struct_size;
   uint32_t abi_version;
   uint32_t width;
   uint32_t height;
@@ -32,6 +41,8 @@ typedef struct platform_config {
 } platform_config;
 
 typedef struct platform_frame {
+  // Size in bytes of this struct provided by the caller.
+  uint32_t struct_size;
   uint32_t width;
   uint32_t height;
   uint32_t stride_bytes;
@@ -39,6 +50,8 @@ typedef struct platform_frame {
 } platform_frame;
 
 typedef struct platform_event {
+  // Size in bytes of this struct provided by the caller.
+  uint32_t struct_size;
   uint32_t kind;
   uint32_t key_code;
   uint32_t width;
@@ -49,9 +62,10 @@ typedef struct platform_event {
 extern "C" {
 #endif
 
-bool platform_init_window(const platform_config *config);
-bool platform_poll_event(platform_event *out_event);
-bool platform_present_frame(const platform_frame *frame);
+uint32_t platform_get_abi_version(void);
+uint8_t platform_init_window(const platform_config *config);
+uint8_t platform_poll_event(platform_event *out_event);
+uint8_t platform_present_frame(const platform_frame *frame);
 void platform_shutdown(void);
 
 #ifdef __cplusplus

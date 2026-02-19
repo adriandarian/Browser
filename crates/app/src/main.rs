@@ -4,7 +4,7 @@ use platform_abi::{
     PlatformConfig, PlatformEvent, PlatformFrame, PLATFORM_ABI_VERSION, PLATFORM_EVENT_KEY_DOWN,
     PLATFORM_EVENT_QUIT, PLATFORM_EVENT_RESIZE, PLATFORM_KEY_ESCAPE,
 };
-use renderer::render_test_pattern;
+use renderer::{Pattern, Renderer};
 use std::{ffi::CString, mem::MaybeUninit, thread, time::Duration};
 
 fn main() {
@@ -15,6 +15,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    let pattern = parse_pattern_from_args(std::env::args().skip(1))?;
     let title = CString::new("Tessera")
         .map_err(|_| "window title contains interior null byte".to_string())?;
 
@@ -33,7 +34,9 @@ fn run() -> Result<(), String> {
         return Err("platform_init_window returned false".to_string());
     }
 
-    let mut framebuffer = vec![0_u8; (width as usize) * (height as usize) * 4];
+    let mut renderer = Renderer::new(width, height);
+    renderer.set_pattern(pattern);
+
     let mut frame_index = 0_u64;
     let mut running = true;
 
@@ -53,7 +56,7 @@ fn run() -> Result<(), String> {
                     if event.width > 0 && event.height > 0 {
                         width = event.width;
                         height = event.height;
-                        framebuffer.resize((width as usize) * (height as usize) * 4, 0);
+                        renderer.resize(width, height);
                     }
                 }
                 _ => {}
@@ -64,7 +67,8 @@ fn run() -> Result<(), String> {
             break;
         }
 
-        render_test_pattern(&mut framebuffer, width, height, frame_index);
+        let time_seconds = frame_index as f32 / 60.0;
+        let framebuffer = renderer.render(frame_index, time_seconds);
         frame_index = frame_index.wrapping_add(1);
 
         let frame = PlatformFrame {
@@ -84,4 +88,37 @@ fn run() -> Result<(), String> {
 
     unsafe { ffi::platform_shutdown() };
     Ok(())
+}
+
+fn parse_pattern_from_args(args: impl Iterator<Item = String>) -> Result<Pattern, String> {
+    let mut pattern = Pattern::Gradient;
+    let mut args = args.peekable();
+
+    while let Some(arg) = args.next() {
+        if arg == "--pattern" {
+            let Some(value) = args.next() else {
+                return Err(
+                    "missing value for --pattern (expected: gradient|solid|rects)".to_string(),
+                );
+            };
+
+            pattern = Pattern::parse(&value).ok_or_else(|| {
+                format!("unknown pattern '{value}' (expected: gradient|solid|rects)",)
+            })?;
+        }
+    }
+
+    Ok(pattern)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_pattern_flag() {
+        let args = vec!["--pattern".to_string(), "rects".to_string()];
+        let parsed = parse_pattern_from_args(args.into_iter()).unwrap();
+        assert_eq!(parsed, Pattern::Rects);
+    }
 }

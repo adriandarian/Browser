@@ -23,3 +23,8 @@ On failure, the harness writes:
 - `tests/golden/diffs/<case>.diff.json`
 
 Use `--update` to refresh `sha256` values after intentional rendering changes.
+
+
+## Output report
+
+The test command prints a minimal summary with executed/failed counts and failing diff paths.

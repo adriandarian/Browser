@@ -69,37 +69,44 @@ def sha256_of_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def run_headless_case(case: dict[str, object], target: str, release: bool) -> tuple[bool, str | None]:
+def render_case_to_temp(case: dict[str, object], target: str, release: bool, temp_dir: Path) -> tuple[int, Path, str, int, int, int]:
     name = str(case["name"])
     pattern = str(case.get("pattern", "test-pattern"))
     width = int(case["width"])
     height = int(case["height"])
     frame_index = int(case["frame_index"])
+    out_rgba = temp_dir / f"{name}.rgba"
+
+    cmd = cargo_run_cmd(target, release)
+    cmd.extend(
+        [
+            "--headless-output",
+            str(out_rgba),
+            "--pattern",
+            pattern,
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+            "--frame-index",
+            str(frame_index),
+        ]
+    )
+    result = subprocess.run(cmd, cwd=REPO_ROOT, env=os.environ.copy(), capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stdout)
+        print(result.stderr)
+    return result.returncode, out_rgba, pattern, width, height, frame_index
+
+
+def run_headless_case(case: dict[str, object], target: str, release: bool) -> tuple[bool, str | None]:
+    name = str(case["name"])
     expected_hash = str(case["sha256"])
 
     with tempfile.TemporaryDirectory(prefix=f"golden-{name}-") as td:
-        out_rgba = Path(td) / f"{name}.rgba"
-        cmd = cargo_run_cmd(target, release)
-        cmd.extend(
-            [
-                "--headless-output",
-                str(out_rgba),
-                "--pattern",
-                pattern,
-                "--width",
-                str(width),
-                "--height",
-                str(height),
-                "--frame-index",
-                str(frame_index),
-            ]
-        )
-
-        result = subprocess.run(cmd, cwd=REPO_ROOT, env=os.environ.copy(), capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"FAIL {name} (renderer exited {result.returncode})")
-            print(result.stdout)
-            print(result.stderr)
+        code, out_rgba, pattern, width, height, frame_index = render_case_to_temp(case, target, release, Path(td))
+        if code != 0:
+            print(f"FAIL {name} (renderer exited {code})")
             return False, None
 
         actual_hash = sha256_of_file(out_rgba)
@@ -129,8 +136,9 @@ def run_headless_case(case: dict[str, object], target: str, release: bool) -> tu
             + "\n",
             encoding="utf-8",
         )
-        print(f"FAIL {name} diff={diff_report.relative_to(REPO_ROOT)}")
-        return False, str(diff_report.relative_to(REPO_ROOT))
+        diff_rel = str(diff_report.relative_to(REPO_ROOT))
+        print(f"FAIL {name} diff={diff_rel}")
+        return False, diff_rel
 
 
 def do_test(args: argparse.Namespace) -> int:
@@ -146,45 +154,54 @@ def do_test(args: argparse.Namespace) -> int:
         return 2
 
     failures = 0
+    updated = 0
+    executed = 0
+    diff_paths: list[str] = []
+
     for case_path in case_paths:
         case = json.loads(case_path.read_text(encoding="utf-8"))
         if args.update:
             with tempfile.TemporaryDirectory(prefix=f"golden-update-{case['name']}-") as td:
-                out_rgba = Path(td) / f"{case['name']}.rgba"
-                cmd = cargo_run_cmd(target, args.release)
-                cmd.extend(
-                    [
-                        "--headless-output",
-                        str(out_rgba),
-                        "--pattern",
-                        str(case.get("pattern", "test-pattern")),
-                        "--width",
-                        str(case["width"]),
-                        "--height",
-                        str(case["height"]),
-                        "--frame-index",
-                        str(case["frame_index"]),
-                    ]
-                )
-                result = subprocess.run(cmd, cwd=REPO_ROOT, env=os.environ.copy())
-                if result.returncode != 0:
-                    print(f"FAIL {case['name']} (renderer exited {result.returncode})")
+                code, out_rgba, *_ = render_case_to_temp(case, target, args.release, Path(td))
+                if code != 0:
+                    print(f"FAIL {case['name']} (renderer exited {code})")
                     failures += 1
+                    executed += 1
                     continue
                 case["sha256"] = sha256_of_file(out_rgba)
                 case_path.write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
                 print(f"UPDATED {case['name']} => {case['sha256']}")
+                updated += 1
+                executed += 1
             continue
 
-        ok, _ = run_headless_case(case, target, args.release)
+        expected_hash = str(case.get("sha256", "")).strip()
+        if not expected_hash:
+            print(f"FAIL {case.get('name', case_path.stem)} (missing sha256, run with --update)")
+            failures += 1
+            executed += 1
+            continue
+
+        ok, diff_path = run_headless_case(case, target, args.release)
         if not ok:
             failures += 1
+            if diff_path:
+                diff_paths.append(diff_path)
+        executed += 1
+
+    print("\nGolden report")
+    print(f"- executed: {executed}")
+    if args.update:
+        print(f"- updated: {updated}")
+    print(f"- failed: {failures}")
+    for diff_path in diff_paths:
+        print(f"- diff: {diff_path}")
 
     if failures:
-        print(f"\nGolden tests: FAIL ({failures} case(s) failed)")
+        print("Golden tests: FAIL")
         return 1
 
-    print("\nGolden tests: PASS")
+    print("Golden tests: PASS")
     return 0
 
 

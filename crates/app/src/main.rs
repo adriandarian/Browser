@@ -2,7 +2,7 @@ mod ffi;
 
 use platform_abi::{
     PlatformConfig, PlatformEvent, PlatformFrame, PLATFORM_ABI_VERSION, PLATFORM_EVENT_KEY_DOWN,
-    PLATFORM_EVENT_QUIT, PLATFORM_EVENT_RESIZE, PLATFORM_KEY_ESCAPE,
+    PLATFORM_EVENT_QUIT, PLATFORM_EVENT_RESIZE, PLATFORM_FALSE, PLATFORM_KEY_ESCAPE,
 };
 use renderer::render_test_pattern;
 use std::{ffi::CString, mem::MaybeUninit, thread, time::Duration};
@@ -22,14 +22,22 @@ fn run() -> Result<(), String> {
     let mut height = 540_u32;
 
     let config = PlatformConfig {
+        struct_size: std::mem::size_of::<PlatformConfig>() as u32,
         abi_version: PLATFORM_ABI_VERSION,
         width,
         height,
         title_utf8: title.as_ptr(),
     };
 
+    let runtime_abi = unsafe { ffi::platform_get_abi_version() };
+    if runtime_abi != PLATFORM_ABI_VERSION {
+        return Err(format!(
+            "platform ABI mismatch: runtime={runtime_abi}, expected={PLATFORM_ABI_VERSION}"
+        ));
+    }
+
     let initialized = unsafe { ffi::platform_init_window(&config as *const PlatformConfig) };
-    if !initialized {
+    if initialized == PLATFORM_FALSE {
         return Err("platform_init_window returned false".to_string());
     }
 
@@ -40,8 +48,11 @@ fn run() -> Result<(), String> {
     while running {
         loop {
             let mut event = MaybeUninit::<PlatformEvent>::zeroed();
+            unsafe {
+                (*event.as_mut_ptr()).struct_size = std::mem::size_of::<PlatformEvent>() as u32;
+            }
             let has_event = unsafe { ffi::platform_poll_event(event.as_mut_ptr()) };
-            if !has_event {
+            if has_event == PLATFORM_FALSE {
                 break;
             }
 
@@ -68,6 +79,7 @@ fn run() -> Result<(), String> {
         frame_index = frame_index.wrapping_add(1);
 
         let frame = PlatformFrame {
+            struct_size: std::mem::size_of::<PlatformFrame>() as u32,
             width,
             height,
             stride_bytes: width * 4,
@@ -75,7 +87,7 @@ fn run() -> Result<(), String> {
         };
 
         let presented = unsafe { ffi::platform_present_frame(&frame as *const PlatformFrame) };
-        if !presented {
+        if presented == PLATFORM_FALSE {
             running = false;
         }
 

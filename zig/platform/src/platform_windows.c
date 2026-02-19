@@ -21,10 +21,13 @@ static void push_event(const platform_event *event) {
   g_event_tail = next;
 }
 
+uint32_t platform_get_abi_version(void) { return PLATFORM_ABI_VERSION; }
+
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
   (void)hwnd;
   platform_event event;
   memset(&event, 0, sizeof(event));
+  event.struct_size = sizeof(platform_event);
 
   switch (msg) {
     case WM_CLOSE:
@@ -57,9 +60,10 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
   }
 }
 
-bool platform_init_window(const platform_config *config) {
-  if (config == NULL || config->abi_version != PLATFORM_ABI_VERSION) {
-    return false;
+uint8_t platform_init_window(const platform_config *config) {
+  if (config == NULL || config->struct_size < sizeof(platform_config) ||
+      config->abi_version != PLATFORM_ABI_VERSION) {
+    return PLATFORM_FALSE;
   }
 
   HINSTANCE instance = GetModuleHandleW(NULL);
@@ -73,7 +77,7 @@ bool platform_init_window(const platform_config *config) {
   wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
 
   if (RegisterClassW(&wc) == 0) {
-    return false;
+    return PLATFORM_FALSE;
   }
 
   RECT rect = {0, 0, (LONG)config->width, (LONG)config->height};
@@ -83,17 +87,20 @@ bool platform_init_window(const platform_config *config) {
                            CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, NULL,
                            NULL, instance, NULL);
   if (g_hwnd == NULL) {
-    return false;
+    return PLATFORM_FALSE;
   }
 
   ShowWindow(g_hwnd, SW_SHOW);
   UpdateWindow(g_hwnd);
 
   g_dc = GetDC(g_hwnd);
-  return g_dc != NULL;
+  return (g_dc != NULL) ? PLATFORM_TRUE : PLATFORM_FALSE;
 }
 
-bool platform_poll_event(platform_event *out_event) {
+uint8_t platform_poll_event(platform_event *out_event) {
+  if (out_event == NULL || out_event->struct_size < sizeof(platform_event)) {
+    return PLATFORM_FALSE;
+  }
   MSG msg;
   while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
     TranslateMessage(&msg);
@@ -101,17 +108,18 @@ bool platform_poll_event(platform_event *out_event) {
   }
 
   if (g_event_head == g_event_tail) {
-    return false;
+    return PLATFORM_FALSE;
   }
 
   *out_event = g_events[g_event_head];
   g_event_head = (g_event_head + 1u) % EVENT_CAPACITY;
-  return true;
+  return PLATFORM_TRUE;
 }
 
-bool platform_present_frame(const platform_frame *frame) {
-  if (g_hwnd == NULL || g_dc == NULL || frame == NULL || frame->pixels_rgba8 == NULL) {
-    return false;
+uint8_t platform_present_frame(const platform_frame *frame) {
+  if (g_hwnd == NULL || g_dc == NULL || frame == NULL ||
+      frame->struct_size < sizeof(platform_frame) || frame->pixels_rgba8 == NULL) {
+    return PLATFORM_FALSE;
   }
 
   BITMAPINFO info;
@@ -127,7 +135,7 @@ bool platform_present_frame(const platform_frame *frame) {
                              (int)frame->width, (int)frame->height, frame->pixels_rgba8, &info,
                              DIB_RGB_COLORS, SRCCOPY);
 
-  return result != GDI_ERROR;
+  return (result != GDI_ERROR) ? PLATFORM_TRUE : PLATFORM_FALSE;
 }
 
 void platform_shutdown(void) {

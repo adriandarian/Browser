@@ -11,7 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def host_target(os_name: str | None) -> str:
+def host_target(os_name: str | None) -> str | None:
     if os_name:
         if os_name == "macos":
             machine = platform.machine().lower()
@@ -26,6 +26,8 @@ def host_target(os_name: str | None) -> str:
         return "aarch64-apple-darwin" if "arm" in machine else "x86_64-apple-darwin"
     if system == "windows":
         return "x86_64-pc-windows-msvc"
+    if system == "linux":
+        return None
     raise ValueError("Host OS is unsupported for this runner; pass --os explicitly for cross-build.")
 
 
@@ -45,7 +47,9 @@ def main() -> int:
         print(f"[run.py] {exc}")
         return 2
 
-    cmd = ["cargo", "run", "-p", "tessera", "--target", target]
+    cmd = ["cargo", "run", "-p", "tessera"]
+    if target is not None:
+        cmd.extend(["--target", target])
     if args.release:
         cmd.append("--release")
 

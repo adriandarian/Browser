@@ -38,12 +38,28 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
       return 0;
     case WM_KEYDOWN:
       event.kind = PLATFORM_EVENT_KEY_DOWN;
-      event.key_code = (wparam == VK_ESCAPE) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+      if (wparam == VK_ESCAPE) {
+        event.key_code = PLATFORM_KEY_ESCAPE;
+      } else if (wparam == VK_SPACE) {
+        event.key_code = PLATFORM_KEY_SPACE;
+      } else if (wparam == 'H') {
+        event.key_code = PLATFORM_KEY_H;
+      } else {
+        event.key_code = PLATFORM_KEY_UNKNOWN;
+      }
       push_event(&event);
       return 0;
     case WM_KEYUP:
       event.kind = PLATFORM_EVENT_KEY_UP;
-      event.key_code = (wparam == VK_ESCAPE) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+      if (wparam == VK_ESCAPE) {
+        event.key_code = PLATFORM_KEY_ESCAPE;
+      } else if (wparam == VK_SPACE) {
+        event.key_code = PLATFORM_KEY_SPACE;
+      } else if (wparam == 'H') {
+        event.key_code = PLATFORM_KEY_H;
+      } else {
+        event.key_code = PLATFORM_KEY_UNKNOWN;
+      }
       push_event(&event);
       return 0;
     case WM_SIZE:

@@ -101,21 +101,25 @@ bool platform_poll_event(platform_event *out_event) {
     }
 
     if ([event type] == NSEventTypeKeyDown) {
+      out_event->kind = PLATFORM_EVENT_KEY_DOWN;
       if ([event keyCode] == 53) {
-        out_event->kind = PLATFORM_EVENT_KEY_DOWN;
         out_event->key_code = PLATFORM_KEY_ESCAPE;
-      } else {
-        out_event->kind = PLATFORM_EVENT_KEY_DOWN;
+      } else if ([event keyCode] == 49) {
+        out_event->key_code = PLATFORM_KEY_SPACE;
+      } else if ([event keyCode] == 4) {
+        out_event->key_code = PLATFORM_KEY_H;
       }
       return true;
     }
 
     if ([event type] == NSEventTypeKeyUp) {
+      out_event->kind = PLATFORM_EVENT_KEY_UP;
       if ([event keyCode] == 53) {
-        out_event->kind = PLATFORM_EVENT_KEY_UP;
         out_event->key_code = PLATFORM_KEY_ESCAPE;
-      } else {
-        out_event->kind = PLATFORM_EVENT_KEY_UP;
+      } else if ([event keyCode] == 49) {
+        out_event->key_code = PLATFORM_KEY_SPACE;
+      } else if ([event keyCode] == 4) {
+        out_event->key_code = PLATFORM_KEY_H;
       }
       return true;
     }

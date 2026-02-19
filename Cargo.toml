@@ -1,6 +1,9 @@
 [workspace]
 members = [
   "crates/app",
+  "crates/engine_loop",
+  "crates/tracing",
+  "crates/tracing-subscriber",
   "crates/platform_abi",
   "crates/renderer",
 ]
@@ -12,5 +15,8 @@ license = "MIT"
 version = "0.1.0"
 
 [workspace.dependencies]
+engine_loop = { path = "crates/engine_loop" }
+tracing = { path = "crates/tracing" }
+tracing-subscriber = { path = "crates/tracing-subscriber" }
 platform_abi = { path = "crates/platform_abi" }
 renderer = { path = "crates/renderer" }

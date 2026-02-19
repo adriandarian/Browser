@@ -6,7 +6,10 @@ license.workspace = true
 build = "build.rs"
 
 [dependencies]
+engine_loop.workspace = true
 platform_abi.workspace = true
 renderer.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [build-dependencies]

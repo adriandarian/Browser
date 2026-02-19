@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "engine_loop"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+]
+
+[[package]]
 name = "platform_abi"
 version = "0.1.0"
 
@@ -14,6 +21,17 @@ version = "0.1.0"
 name = "tessera"
 version = "0.1.0"
 dependencies = [
+ "engine_loop",
  "platform_abi",
  "renderer",
+ "tracing",
+ "tracing-subscriber",
 ]
+
+[[package]]
+name = "tracing"
+version = "0.1.0"
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.1.0"

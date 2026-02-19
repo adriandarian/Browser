@@ -11,7 +11,7 @@ unsafe extern "C" {
 #[cfg(platform_stub)]
 #[no_mangle]
 pub unsafe extern "C" fn platform_init_window(_config: *const PlatformConfig) -> bool {
-    false
+    true
 }
 
 #[cfg(platform_stub)]

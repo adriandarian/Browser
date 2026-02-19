@@ -1,0 +1,8 @@
+{
+  "name": "test-pattern-f0-64x64",
+  "pattern": "test-pattern",
+  "width": 64,
+  "height": 64,
+  "frame_index": 0,
+  "sha256": "0ede29c88978d2dfc76557e5b7c8d2114aaf78e2278aa5c1348da7726f8fdd1f"
+}

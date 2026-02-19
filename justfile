@@ -6,10 +6,10 @@ build:
     cargo build --workspace
 
 run:
-    python3 tools/py/run.py
+    python3 tools/py/run.py run
 
 test:
-    cargo test --workspace
+    python3 tools/py/run.py test
 
 fmt:
     cargo fmt --all

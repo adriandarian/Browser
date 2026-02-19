@@ -40,7 +40,7 @@ just build
 just run
 ```
 
-`tools/py/run.py` auto-selects:
+`python tools/py/run.py run` auto-selects:
 - `aarch64-apple-darwin` on Apple Silicon
 - `x86_64-apple-darwin` on Intel Macs
 
@@ -59,8 +59,8 @@ The runner targets `x86_64-pc-windows-msvc`.
 
 ```bash
 just build   # cargo build --workspace
-just run     # python3 tools/py/run.py
-just test    # cargo test --workspace
+just run     # python3 tools/py/run.py run
+just test    # python3 tools/py/run.py test
 just fmt     # cargo fmt --all
 ```
 

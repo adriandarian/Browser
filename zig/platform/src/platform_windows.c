@@ -1,0 +1,142 @@
+#include "platform.h"
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <string.h>
+
+static HWND g_hwnd = NULL;
+static HDC g_dc = NULL;
+
+#define EVENT_CAPACITY 256
+static platform_event g_events[EVENT_CAPACITY];
+static unsigned int g_event_head = 0;
+static unsigned int g_event_tail = 0;
+
+static void push_event(const platform_event *event) {
+  unsigned int next = (g_event_tail + 1u) % EVENT_CAPACITY;
+  if (next == g_event_head) {
+    return;
+  }
+  g_events[g_event_tail] = *event;
+  g_event_tail = next;
+}
+
+static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+  (void)hwnd;
+  platform_event event;
+  memset(&event, 0, sizeof(event));
+
+  switch (msg) {
+    case WM_CLOSE:
+      event.kind = PLATFORM_EVENT_QUIT;
+      push_event(&event);
+      return 0;
+    case WM_DESTROY:
+      event.kind = PLATFORM_EVENT_QUIT;
+      push_event(&event);
+      PostQuitMessage(0);
+      return 0;
+    case WM_KEYDOWN:
+      event.kind = PLATFORM_EVENT_KEY_DOWN;
+      event.key_code = (wparam == VK_ESCAPE) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+      push_event(&event);
+      return 0;
+    case WM_KEYUP:
+      event.kind = PLATFORM_EVENT_KEY_UP;
+      event.key_code = (wparam == VK_ESCAPE) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+      push_event(&event);
+      return 0;
+    case WM_SIZE:
+      event.kind = PLATFORM_EVENT_RESIZE;
+      event.width = (uint32_t)LOWORD(lparam);
+      event.height = (uint32_t)HIWORD(lparam);
+      push_event(&event);
+      return 0;
+    default:
+      return DefWindowProcW(hwnd, msg, wparam, lparam);
+  }
+}
+
+bool platform_init_window(const platform_config *config) {
+  if (config == NULL || config->abi_version != PLATFORM_ABI_VERSION) {
+    return false;
+  }
+
+  HINSTANCE instance = GetModuleHandleW(NULL);
+  const wchar_t *class_name = L"TesseraWindowClass";
+
+  WNDCLASSW wc;
+  memset(&wc, 0, sizeof(wc));
+  wc.lpfnWndProc = window_proc;
+  wc.hInstance = instance;
+  wc.lpszClassName = class_name;
+  wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
+
+  if (RegisterClassW(&wc) == 0) {
+    return false;
+  }
+
+  RECT rect = {0, 0, (LONG)config->width, (LONG)config->height};
+  AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+
+  g_hwnd = CreateWindowExW(0, class_name, L"Tessera", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                           CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, NULL,
+                           NULL, instance, NULL);
+  if (g_hwnd == NULL) {
+    return false;
+  }
+
+  ShowWindow(g_hwnd, SW_SHOW);
+  UpdateWindow(g_hwnd);
+
+  g_dc = GetDC(g_hwnd);
+  return g_dc != NULL;
+}
+
+bool platform_poll_event(platform_event *out_event) {
+  MSG msg;
+  while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+    TranslateMessage(&msg);
+    DispatchMessageW(&msg);
+  }
+
+  if (g_event_head == g_event_tail) {
+    return false;
+  }
+
+  *out_event = g_events[g_event_head];
+  g_event_head = (g_event_head + 1u) % EVENT_CAPACITY;
+  return true;
+}
+
+bool platform_present_frame(const platform_frame *frame) {
+  if (g_hwnd == NULL || g_dc == NULL || frame == NULL || frame->pixels_rgba8 == NULL) {
+    return false;
+  }
+
+  BITMAPINFO info;
+  memset(&info, 0, sizeof(info));
+  info.bmiHeader.biSize = sizeof(info.bmiHeader);
+  info.bmiHeader.biWidth = (LONG)frame->width;
+  info.bmiHeader.biHeight = -((LONG)frame->height);
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+
+  int result = StretchDIBits(g_dc, 0, 0, (int)frame->width, (int)frame->height, 0, 0,
+                             (int)frame->width, (int)frame->height, frame->pixels_rgba8, &info,
+                             DIB_RGB_COLORS, SRCCOPY);
+
+  return result != GDI_ERROR;
+}
+
+void platform_shutdown(void) {
+  if (g_dc != NULL && g_hwnd != NULL) {
+    ReleaseDC(g_hwnd, g_dc);
+    g_dc = NULL;
+  }
+  if (g_hwnd != NULL) {
+    DestroyWindow(g_hwnd);
+    g_hwnd = NULL;
+  }
+}

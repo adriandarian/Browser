@@ -40,6 +40,11 @@ just build
 just run
 ```
 
+macOS requirements/notes:
+- Xcode Command Line Tools must be installed (`xcode-select --install`) so Zig/Cargo can link Apple frameworks.
+- Zig must be on `PATH` (the Rust `crates/app/build.rs` invokes `zig build` for `zig/platform` and wires the produced static library into Cargo automatically).
+- On first launch, macOS may prompt for window/display permissions depending on local security settings; allow the app to show windows.
+
 `tools/py/run.py` auto-selects:
 - `aarch64-apple-darwin` on Apple Silicon
 - `x86_64-apple-darwin` on Intel Macs

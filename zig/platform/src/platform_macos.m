@@ -6,6 +6,67 @@
 #include <stdint.h>
 #include <string.h>
 
+#define TESSERA_EVENT_QUEUE_CAPACITY 64
+
+typedef struct TesseraEventQueue {
+  platform_event events[TESSERA_EVENT_QUEUE_CAPACITY];
+  uint32_t head;
+  uint32_t tail;
+} TesseraEventQueue;
+
+static NSWindow *g_window = nil;
+static NSView *g_view = nil;
+static bool g_initialized = false;
+static TesseraEventQueue g_event_queue = {0};
+
+static bool event_queue_is_empty(void) { return g_event_queue.head == g_event_queue.tail; }
+
+static bool event_queue_push(const platform_event *event) {
+  uint32_t next_tail = (g_event_queue.tail + 1u) % TESSERA_EVENT_QUEUE_CAPACITY;
+  if (next_tail == g_event_queue.head) {
+    return false;
+  }
+
+  g_event_queue.events[g_event_queue.tail] = *event;
+  g_event_queue.tail = next_tail;
+  return true;
+}
+
+static bool event_queue_pop(platform_event *out_event) {
+  if (event_queue_is_empty()) {
+    return false;
+  }
+
+  *out_event = g_event_queue.events[g_event_queue.head];
+  g_event_queue.head = (g_event_queue.head + 1u) % TESSERA_EVENT_QUEUE_CAPACITY;
+  return true;
+}
+
+static void enqueue_quit_event(void) {
+  platform_event event = {0};
+  event.kind = PLATFORM_EVENT_QUIT;
+  (void)event_queue_push(&event);
+}
+
+static void enqueue_resize_event(uint32_t width, uint32_t height) {
+  if (width == 0 || height == 0) {
+    return;
+  }
+
+  platform_event event = {0};
+  event.kind = PLATFORM_EVENT_RESIZE;
+  event.width = width;
+  event.height = height;
+  (void)event_queue_push(&event);
+}
+
+static void enqueue_escape_keydown_event(void) {
+  platform_event event = {0};
+  event.kind = PLATFORM_EVENT_KEY_DOWN;
+  event.key_code = PLATFORM_KEY_ESCAPE;
+  (void)event_queue_push(&event);
+}
+
 @interface TesseraWindowDelegate : NSObject <NSWindowDelegate>
 @end
 
@@ -16,21 +77,10 @@
 @property(nonatomic) uint32_t frameStride;
 @end
 
-static NSWindow *g_window = nil;
-static TesseraView *g_view = nil;
-static TesseraWindowDelegate *g_delegate = nil;
-static bool g_initialized = false;
-static bool g_pending_quit = false;
-static bool g_pending_resize = false;
-static bool g_pending_escape_down = false;
-static bool g_pending_escape_up = false;
-static uint32_t g_resize_width = 0;
-static uint32_t g_resize_height = 0;
-
 @implementation TesseraWindowDelegate
 - (void)windowWillClose:(NSNotification *)notification {
   (void)notification;
-  g_pending_quit = true;
+  enqueue_quit_event();
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
@@ -40,15 +90,7 @@ static uint32_t g_resize_height = 0;
   }
 
   NSRect bounds = [g_view bounds];
-  uint32_t width = (uint32_t)bounds.size.width;
-  uint32_t height = (uint32_t)bounds.size.height;
-  if (width == 0 || height == 0) {
-    return;
-  }
-
-  g_resize_width = width;
-  g_resize_height = height;
-  g_pending_resize = true;
+  enqueue_resize_event((uint32_t)bounds.size.width, (uint32_t)bounds.size.height);
 }
 @end
 
@@ -57,23 +99,37 @@ static uint32_t g_resize_height = 0;
 
 - (BOOL)acceptsFirstResponder { return YES; }
 
+- (void)keyDown:(NSEvent *)event {
+  if (event != nil && [event keyCode] == 53) {
+    enqueue_escape_keydown_event();
+    return;
+  }
+
+  [super keyDown:event];
+}
+
+- (void)keyUp:(NSEvent *)event {
+  [super keyUp:event];
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
   (void)dirtyRect;
+
   if (self.frameData == nil || self.frameWidth == 0 || self.frameHeight == 0 || self.frameStride == 0) {
     [[NSColor blackColor] setFill];
     NSRectFill(self.bounds);
     return;
   }
 
-  CGDataProviderRef provider =
-      CGDataProviderCreateWithData(NULL, [self.frameData bytes], self.frameStride * self.frameHeight, NULL);
+  const size_t data_size = (size_t)self.frameStride * (size_t)self.frameHeight;
+  CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, [self.frameData bytes], data_size, NULL);
   if (provider == NULL) {
     return;
   }
 
-  CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-  CGImageRef image = CGImageCreate(self.frameWidth, self.frameHeight, 8, 32, self.frameStride, colorSpace,
-                                   kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big, provider, NULL,
+  CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
+  CGImageRef image = CGImageCreate(self.frameWidth, self.frameHeight, 8, 32, self.frameStride, color_space,
+                                   kCGImageAlphaLast | kCGBitmapByteOrder32Big, provider, NULL,
                                    false, kCGRenderingIntentDefault);
 
   if (image != NULL) {
@@ -82,10 +138,12 @@ static uint32_t g_resize_height = 0;
     CGImageRelease(image);
   }
 
-  CGColorSpaceRelease(colorSpace);
+  CGColorSpaceRelease(color_space);
   CGDataProviderRelease(provider);
 }
 @end
+
+static TesseraWindowDelegate *g_delegate = nil;
 
 static void pump_system_events(void) {
   while (true) {
@@ -97,16 +155,6 @@ static void pump_system_events(void) {
       break;
     }
 
-    if ([event type] == NSEventTypeKeyDown && [event keyCode] == 53) {
-      g_pending_escape_down = true;
-      continue;
-    }
-
-    if ([event type] == NSEventTypeKeyUp && [event keyCode] == 53) {
-      g_pending_escape_up = true;
-      continue;
-    }
-
     [NSApp sendEvent:event];
   }
 
@@ -114,6 +162,10 @@ static void pump_system_events(void) {
 }
 
 bool platform_init_window(const platform_config *config) {
+  if (g_initialized) {
+    return false;
+  }
+
   if (config == NULL || config->abi_version != PLATFORM_ABI_VERSION || config->width == 0 ||
       config->height == 0) {
     return false;
@@ -124,12 +176,12 @@ bool platform_init_window(const platform_config *config) {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [NSApp finishLaunching];
 
-    NSUInteger styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                           NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable;
     NSRect frame = NSMakeRect(0, 0, config->width, config->height);
+    const NSUInteger style_mask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                  NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable;
 
     g_window = [[NSWindow alloc] initWithContentRect:frame
-                                            styleMask:styleMask
+                                            styleMask:style_mask
                                               backing:NSBackingStoreBuffered
                                                 defer:NO];
     if (g_window == nil) {
@@ -138,33 +190,29 @@ bool platform_init_window(const platform_config *config) {
 
     NSString *title = @"Tessera";
     if (config->title_utf8 != NULL) {
-      NSString *utf8Title = [NSString stringWithUTF8String:config->title_utf8];
-      if (utf8Title != nil) {
-        title = utf8Title;
+      NSString *utf8_title = [NSString stringWithUTF8String:config->title_utf8];
+      if (utf8_title != nil) {
+        title = utf8_title;
       }
     }
     [g_window setTitle:title];
 
-    g_view = [[TesseraView alloc] initWithFrame:frame];
-    if (g_view == nil) {
+    TesseraView *view = [[TesseraView alloc] initWithFrame:frame];
+    if (view == nil) {
       return false;
     }
 
     g_delegate = [[TesseraWindowDelegate alloc] init];
+    g_view = view;
     [g_window setDelegate:g_delegate];
     [g_window setContentView:g_view];
     [g_window makeFirstResponder:g_view];
     [g_window center];
     [g_window makeKeyAndOrderFront:nil];
-
     [NSApp activateIgnoringOtherApps:YES];
 
-    g_pending_quit = false;
-    g_pending_resize = true;
-    g_pending_escape_down = false;
-    g_pending_escape_up = false;
-    g_resize_width = config->width;
-    g_resize_height = config->height;
+    memset(&g_event_queue, 0, sizeof(g_event_queue));
+    enqueue_resize_event(config->width, config->height);
     g_initialized = true;
     return true;
   }
@@ -179,36 +227,7 @@ bool platform_poll_event(platform_event *out_event) {
 
   @autoreleasepool {
     pump_system_events();
-
-    if (g_pending_quit) {
-      g_pending_quit = false;
-      out_event->kind = PLATFORM_EVENT_QUIT;
-      return true;
-    }
-
-    if (g_pending_resize) {
-      g_pending_resize = false;
-      out_event->kind = PLATFORM_EVENT_RESIZE;
-      out_event->width = g_resize_width;
-      out_event->height = g_resize_height;
-      return true;
-    }
-
-    if (g_pending_escape_down) {
-      g_pending_escape_down = false;
-      out_event->kind = PLATFORM_EVENT_KEY_DOWN;
-      out_event->key_code = PLATFORM_KEY_ESCAPE;
-      return true;
-    }
-
-    if (g_pending_escape_up) {
-      g_pending_escape_up = false;
-      out_event->kind = PLATFORM_EVENT_KEY_UP;
-      out_event->key_code = PLATFORM_KEY_ESCAPE;
-      return true;
-    }
-
-    return false;
+    return event_queue_pop(out_event);
   }
 }
 
@@ -219,19 +238,19 @@ bool platform_present_frame(const platform_frame *frame) {
   }
 
   @autoreleasepool {
-    size_t byteCount = (size_t)frame->stride_bytes * (size_t)frame->height;
-    NSData *copiedFrame = [NSData dataWithBytes:frame->pixels_rgba8 length:byteCount];
-    if (copiedFrame == nil) {
+    TesseraView *view = (TesseraView *)g_view;
+    const size_t bytes = (size_t)frame->stride_bytes * (size_t)frame->height;
+    NSData *copy = [NSData dataWithBytes:frame->pixels_rgba8 length:bytes];
+    if (copy == nil) {
       return false;
     }
 
-    g_view.frameData = copiedFrame;
-    g_view.frameWidth = frame->width;
-    g_view.frameHeight = frame->height;
-    g_view.frameStride = frame->stride_bytes;
-
-    [g_view setNeedsDisplay:YES];
-    [g_view displayIfNeeded];
+    view.frameData = copy;
+    view.frameWidth = frame->width;
+    view.frameHeight = frame->height;
+    view.frameStride = frame->stride_bytes;
+    [view setNeedsDisplay:YES];
+    [view displayIfNeeded];
     return true;
   }
 }
@@ -239,6 +258,7 @@ bool platform_present_frame(const platform_frame *frame) {
 void platform_shutdown(void) {
   @autoreleasepool {
     if (g_window != nil) {
+      [g_window setDelegate:nil];
       [g_window orderOut:nil];
       [g_window close];
     }
@@ -246,12 +266,7 @@ void platform_shutdown(void) {
     g_window = nil;
     g_view = nil;
     g_delegate = nil;
-    g_pending_quit = false;
-    g_pending_resize = false;
-    g_pending_escape_down = false;
-    g_pending_escape_up = false;
-    g_resize_width = 0;
-    g_resize_height = 0;
+    memset(&g_event_queue, 0, sizeof(g_event_queue));
     g_initialized = false;
   }
 }

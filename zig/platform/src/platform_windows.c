@@ -2,10 +2,12 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdlib.h>
 #include <string.h>
 
 static HWND g_hwnd = NULL;
 static HDC g_dc = NULL;
+static ATOM g_window_class = 0;
 
 #define EVENT_CAPACITY 256
 static platform_event g_events[EVENT_CAPACITY];
@@ -19,6 +21,29 @@ static void push_event(const platform_event *event) {
   }
   g_events[g_event_tail] = *event;
   g_event_tail = next;
+}
+
+static wchar_t *utf8_to_utf16(const char *utf8) {
+  if (utf8 == NULL) {
+    return NULL;
+  }
+
+  int chars_needed = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+  if (chars_needed <= 0) {
+    return NULL;
+  }
+
+  wchar_t *wide = (wchar_t *)malloc((size_t)chars_needed * sizeof(wchar_t));
+  if (wide == NULL) {
+    return NULL;
+  }
+
+  if (MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wide, chars_needed) <= 0) {
+    free(wide);
+    return NULL;
+  }
+
+  return wide;
 }
 
 static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -72,16 +97,22 @@ bool platform_init_window(const platform_config *config) {
   wc.lpszClassName = class_name;
   wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
 
-  if (RegisterClassW(&wc) == 0) {
+  g_window_class = RegisterClassW(&wc);
+  if (g_window_class == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return false;
   }
 
   RECT rect = {0, 0, (LONG)config->width, (LONG)config->height};
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
-  g_hwnd = CreateWindowExW(0, class_name, L"Tessera", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+  wchar_t *title_wide = utf8_to_utf16(config->title_utf8);
+  const wchar_t *window_title = title_wide != NULL ? title_wide : L"Tessera";
+
+  g_hwnd = CreateWindowExW(0, class_name, window_title, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                            CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, NULL,
                            NULL, instance, NULL);
+  free(title_wide);
+
   if (g_hwnd == NULL) {
     return false;
   }
@@ -96,6 +127,14 @@ bool platform_init_window(const platform_config *config) {
 bool platform_poll_event(platform_event *out_event) {
   MSG msg;
   while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+    if (msg.message == WM_QUIT) {
+      platform_event event;
+      memset(&event, 0, sizeof(event));
+      event.kind = PLATFORM_EVENT_QUIT;
+      push_event(&event);
+      continue;
+    }
+
     TranslateMessage(&msg);
     DispatchMessageW(&msg);
   }
@@ -114,6 +153,10 @@ bool platform_present_frame(const platform_frame *frame) {
     return false;
   }
 
+  if (frame->width == 0 || frame->height == 0 || frame->stride_bytes < frame->width * 4u) {
+    return false;
+  }
+
   BITMAPINFO info;
   memset(&info, 0, sizeof(info));
   info.bmiHeader.biSize = sizeof(info.bmiHeader);
@@ -123,9 +166,20 @@ bool platform_present_frame(const platform_frame *frame) {
   info.bmiHeader.biBitCount = 32;
   info.bmiHeader.biCompression = BI_RGB;
 
-  int result = StretchDIBits(g_dc, 0, 0, (int)frame->width, (int)frame->height, 0, 0,
-                             (int)frame->width, (int)frame->height, frame->pixels_rgba8, &info,
-                             DIB_RGB_COLORS, SRCCOPY);
+  RECT client_rect;
+  if (!GetClientRect(g_hwnd, &client_rect)) {
+    return false;
+  }
+
+  const int dst_width = client_rect.right - client_rect.left;
+  const int dst_height = client_rect.bottom - client_rect.top;
+  if (dst_width <= 0 || dst_height <= 0) {
+    return true;
+  }
+
+  int result = StretchDIBits(g_dc, 0, 0, dst_width, dst_height, 0, 0, (int)frame->width,
+                             (int)frame->height, frame->pixels_rgba8, &info, DIB_RGB_COLORS,
+                             SRCCOPY);
 
   return result != GDI_ERROR;
 }

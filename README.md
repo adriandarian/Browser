@@ -55,6 +55,25 @@ just run
 
 The runner targets `x86_64-pc-windows-msvc`.
 
+Windows platform integration details:
+- Zig builds `zig/platform/src/platform_windows.c` into a thin static `platform` library.
+- The implementation exposes only the ABI entry points from `include/platform.h` and keeps Win32 internals private.
+- `platform_present_frame` presents Rust-provided `RGBA8` pixels through `StretchDIBits` for correctness-first output.
+- Event mapping currently includes:
+  - `WM_CLOSE` / `WM_DESTROY` / `WM_QUIT` -> `PLATFORM_EVENT_QUIT`
+  - `WM_KEYDOWN` / `WM_KEYUP` (`Esc`) -> `PLATFORM_EVENT_KEY_DOWN` / `PLATFORM_EVENT_KEY_UP`
+  - `WM_SIZE` -> `PLATFORM_EVENT_RESIZE`
+
+Linking notes for Cargo + MSVC:
+- `crates/app/build.rs` drives `zig build` with `x86_64-windows-msvc`.
+- The build script links `platform` and Win32 system libraries (`user32`, `gdi32`) into the Rust binary.
+
+Minimal CI hints (optional, not required yet):
+- Validate Windows on `windows-latest` with:
+  - `cargo build --workspace --target x86_64-pc-windows-msvc`
+  - `cargo test --workspace --target x86_64-pc-windows-msvc`
+- Keep Zig available in CI `PATH` before Cargo runs so `crates/app/build.rs` can invoke it.
+
 ## Development commands
 
 ```bash

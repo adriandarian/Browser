@@ -1,0 +1,12 @@
+[package]
+name = "tessera"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+platform_abi.workspace = true
+renderer.workspace = true
+
+[build-dependencies]

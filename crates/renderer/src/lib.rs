@@ -14,6 +14,31 @@ impl Pattern {
             _ => None,
         }
     }
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Gradient => Self::Solid,
+            Self::Solid => Self::Rects,
+            Self::Rects => Self::Gradient,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DrawRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub color: [u8; 4],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverlayInfo {
+    pub frame_index: u64,
+    pub fps: f32,
+    pub width: u32,
+    pub height: u32,
 }
 
 pub struct Renderer {
@@ -48,7 +73,20 @@ impl Renderer {
         self.pattern = pattern;
     }
 
+    pub fn pattern(&self) -> Pattern {
+        self.pattern
+    }
+
     pub fn render(&mut self, frame_index: u64, time_seconds: f32) -> &[u8] {
+        self.render_pattern(frame_index, time_seconds, None)
+    }
+
+    pub fn render_pattern(
+        &mut self,
+        frame_index: u64,
+        time_seconds: f32,
+        overlay: Option<OverlayInfo>,
+    ) -> &[u8] {
         match self.pattern {
             Pattern::Gradient => {
                 render_gradient(&mut self.pixels, self.width, self.height, frame_index)
@@ -59,6 +97,47 @@ impl Renderer {
             }
             Pattern::Rects => render_rects(&mut self.pixels, self.width, self.height, frame_index),
         }
+
+        if let Some(overlay) = overlay {
+            draw_overlay(&mut self.pixels, self.width, self.height, overlay);
+        }
+
+        &self.pixels
+    }
+
+    pub fn render_display_list(
+        &mut self,
+        frame_index: u64,
+        _time_seconds: f32,
+        rects: &[DrawRect],
+        overlay: Option<OverlayInfo>,
+    ) -> &[u8] {
+        let bg_pulse = ((frame_index as f32 / 120.0).sin() * 0.5 + 0.5) * 16.0;
+        clear_rgba(
+            &mut self.pixels,
+            20_u8.saturating_add(bg_pulse as u8),
+            20_u8.saturating_add(bg_pulse as u8),
+            24_u8.saturating_add(bg_pulse as u8),
+            255,
+        );
+
+        for rect in rects {
+            fill_rect(
+                &mut self.pixels,
+                self.width,
+                self.height,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                rect.color,
+            );
+        }
+
+        if let Some(overlay) = overlay {
+            draw_overlay(&mut self.pixels, self.width, self.height, overlay);
+        }
+
         &self.pixels
     }
 
@@ -151,6 +230,108 @@ fn render_rects(framebuffer: &mut [u8], width: u32, height: u32, frame_index: u6
     );
 }
 
+fn draw_overlay(framebuffer: &mut [u8], width: u32, height: u32, overlay: OverlayInfo) {
+    if width < 24 || height < 16 {
+        return;
+    }
+
+    let panel_width = width.min(360) as i32;
+    fill_rect(
+        framebuffer,
+        width,
+        height,
+        6,
+        6,
+        panel_width,
+        22,
+        [0, 0, 0, 180],
+    );
+
+    let text = format!(
+        "F{} P{:.1} W{} H{}",
+        overlay.frame_index, overlay.fps, overlay.width, overlay.height
+    );
+    draw_text(
+        framebuffer,
+        width,
+        height,
+        10,
+        10,
+        &text,
+        [230, 230, 230, 255],
+    );
+}
+
+fn draw_text(
+    framebuffer: &mut [u8],
+    width: u32,
+    height: u32,
+    mut x: i32,
+    y: i32,
+    text: &str,
+    color: [u8; 4],
+) {
+    for ch in text.chars() {
+        draw_char(framebuffer, width, height, x, y, ch, color);
+        x += 4;
+    }
+}
+
+fn draw_char(
+    framebuffer: &mut [u8],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    ch: char,
+    color: [u8; 4],
+) {
+    let rows = glyph_rows(ch.to_ascii_uppercase());
+
+    for (row_index, row_bits) in rows.iter().enumerate() {
+        for col in 0..3 {
+            let bit = 1 << (2 - col);
+            if row_bits & bit == 0 {
+                continue;
+            }
+
+            fill_rect(
+                framebuffer,
+                width,
+                height,
+                x + col,
+                y + row_index as i32,
+                1,
+                1,
+                color,
+            );
+        }
+    }
+}
+
+fn glyph_rows(ch: char) -> [u8; 5] {
+    match ch {
+        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
+        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
+        '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
+        '3' => [0b111, 0b001, 0b111, 0b001, 0b111],
+        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
+        '5' => [0b111, 0b100, 0b111, 0b001, 0b111],
+        '6' => [0b111, 0b100, 0b111, 0b101, 0b111],
+        '7' => [0b111, 0b001, 0b001, 0b001, 0b001],
+        '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
+        '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
+        'F' => [0b111, 0b100, 0b110, 0b100, 0b100],
+        'H' => [0b101, 0b101, 0b111, 0b101, 0b101],
+        'P' => [0b110, 0b101, 0b110, 0b100, 0b100],
+        'W' => [0b101, 0b101, 0b101, 0b111, 0b101],
+        '.' => [0b000, 0b000, 0b000, 0b000, 0b010],
+        '-' => [0b000, 0b000, 0b111, 0b000, 0b000],
+        ' ' => [0b000, 0b000, 0b000, 0b000, 0b000],
+        _ => [0b111, 0b101, 0b111, 0b101, 0b111],
+    }
+}
+
 fn fill_rect(
     framebuffer: &mut [u8],
     width: u32,
@@ -208,6 +389,23 @@ mod tests {
         let frame = renderer.render(42, 1.25);
 
         assert_eq!(fnv1a64(frame), 0xaa3e6ff366d761a5);
+    }
+
+    #[test]
+    fn display_list_renders_rects() {
+        let mut renderer = Renderer::new(32, 16);
+        let rects = [DrawRect {
+            x: 2,
+            y: 2,
+            width: 6,
+            height: 4,
+            color: [255, 10, 10, 255],
+        }];
+
+        let frame = renderer.render_display_list(0, 0.0, &rects, None);
+        let stride = 32 * 4;
+        let idx = (2 * stride) + (2 * 4);
+        assert_eq!(&frame[idx..idx + 4], &[255, 10, 10, 255]);
     }
 
     fn fnv1a64(bytes: &[u8]) -> u64 {

@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{env, io::ErrorKind, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(platform_stub)");
@@ -33,7 +33,7 @@ fn main() {
         "x86_64-macos"
     };
 
-    let status = Command::new("zig")
+    let status = match Command::new("zig")
         .current_dir(&zig_dir)
         .arg("build")
         .arg("-Doptimize")
@@ -43,7 +43,15 @@ fn main() {
         .arg("--prefix")
         .arg(&out_dir)
         .status()
-        .expect("failed to execute zig build");
+    {
+        Ok(status) => status,
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            println!("cargo:warning=Zig not found; enabling platform_stub for target: {target}");
+            println!("cargo:rustc-cfg=platform_stub");
+            return;
+        }
+        Err(err) => panic!("failed to execute zig build: {err}"),
+    };
 
     if !status.success() {
         panic!("zig build failed with status {status}");

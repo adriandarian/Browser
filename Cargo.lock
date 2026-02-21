@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "engine"
+version = "0.1.0"
+
+[[package]]
+name = "engine_loop"
+version = "0.1.0"
+
+[[package]]
+name = "ipc"
+version = "0.1.0"
+
+[[package]]
 name = "platform_abi"
 version = "0.1.0"
 
@@ -11,9 +23,20 @@ name = "renderer"
 version = "0.1.0"
 
 [[package]]
+name = "script_host"
+version = "0.1.0"
+dependencies = [
+ "engine",
+]
+
+[[package]]
 name = "tessera"
 version = "0.1.0"
 dependencies = [
+ "engine",
+ "engine_loop",
+ "ipc",
  "platform_abi",
  "renderer",
+ "script_host",
 ]

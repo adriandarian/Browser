@@ -2,6 +2,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "platform.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -38,10 +39,60 @@
 }
 @end
 
+#define EVENT_CAPACITY 256
+static platform_event g_events[EVENT_CAPACITY];
+static unsigned int g_event_head = 0;
+static unsigned int g_event_tail = 0;
+
 static NSWindow *g_window = nil;
 static TesseraView *g_view = nil;
 static bool g_initialized = false;
-static bool g_seen_close = false;
+static bool g_should_quit = false;
+static bool g_quit_enqueued = false;
+static uint32_t g_last_width = 0;
+static uint32_t g_last_height = 0;
+
+static void push_event(const platform_event *event) {
+  unsigned int next = (g_event_tail + 1u) % EVENT_CAPACITY;
+  if (next == g_event_head) {
+    return;
+  }
+  g_events[g_event_tail] = *event;
+  g_event_tail = next;
+}
+
+static bool pop_event(platform_event *event) {
+  if (g_event_head == g_event_tail) {
+    return false;
+  }
+  *event = g_events[g_event_head];
+  g_event_head = (g_event_head + 1u) % EVENT_CAPACITY;
+  return true;
+}
+
+static void enqueue_quit_if_needed(void) {
+  if (g_quit_enqueued) {
+    return;
+  }
+  platform_event event;
+  memset(&event, 0, sizeof(event));
+  event.struct_size = sizeof(platform_event);
+  event.kind = PLATFORM_EVENT_QUIT;
+  push_event(&event);
+  g_quit_enqueued = true;
+}
+
+@interface TesseraWindowDelegate : NSObject <NSWindowDelegate>
+@end
+
+@implementation TesseraWindowDelegate
+- (void)windowWillClose:(NSNotification *)notification {
+  (void)notification;
+  g_should_quit = true;
+}
+@end
+
+static TesseraWindowDelegate *g_window_delegate = nil;
 
 uint32_t platform_get_abi_version(void) { return PLATFORM_ABI_VERSION; }
 
@@ -70,10 +121,20 @@ uint8_t platform_init_window(const platform_config *config) {
     }
     [g_window setTitle:title];
 
+    g_window_delegate = [[TesseraWindowDelegate alloc] init];
+    [g_window setDelegate:g_window_delegate];
+
     g_view = [[TesseraView alloc] initWithFrame:frame];
     [g_window setContentView:g_view];
     [g_window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
+
+    g_event_head = 0;
+    g_event_tail = 0;
+    g_should_quit = false;
+    g_quit_enqueued = false;
+    g_last_width = config->width;
+    g_last_height = config->height;
 
     g_initialized = true;
     return PLATFORM_TRUE;
@@ -81,68 +142,68 @@ uint8_t platform_init_window(const platform_config *config) {
 }
 
 uint8_t platform_poll_event(platform_event *out_event) {
-  if (!g_initialized || out_event == NULL ||
-      out_event->struct_size < sizeof(platform_event)) {
+  if (!g_initialized || out_event == NULL || out_event->struct_size < sizeof(platform_event)) {
     return PLATFORM_FALSE;
   }
 
   memset(out_event, 0, sizeof(*out_event));
   out_event->struct_size = sizeof(platform_event);
 
+  if (pop_event(out_event)) {
+    return PLATFORM_TRUE;
+  }
+
   @autoreleasepool {
-    NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                        untilDate:[NSDate distantPast]
-                                           inMode:NSDefaultRunLoopMode
-                                          dequeue:YES];
+    NSEvent *event = nil;
+    while ((event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                       untilDate:[NSDate distantPast]
+                                          inMode:NSDefaultRunLoopMode
+                                         dequeue:YES])) {
+      platform_event next;
+      memset(&next, 0, sizeof(next));
+      next.struct_size = sizeof(platform_event);
 
-    if (event == nil) {
-      if (g_seen_close) {
-        out_event->kind = PLATFORM_EVENT_QUIT;
-        g_seen_close = false;
-        return PLATFORM_TRUE;
-      }
-      return PLATFORM_FALSE;
-    }
-
-    if ([event type] == NSEventTypeKeyDown) {
-      if ([event keyCode] == 53) {
-        out_event->kind = PLATFORM_EVENT_KEY_DOWN;
-        out_event->key_code = PLATFORM_KEY_ESCAPE;
+      if ([event type] == NSEventTypeKeyDown) {
+        next.kind = PLATFORM_EVENT_KEY_DOWN;
+        next.key_code = ([event keyCode] == 53) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+        push_event(&next);
+      } else if ([event type] == NSEventTypeKeyUp) {
+        next.kind = PLATFORM_EVENT_KEY_UP;
+        next.key_code = ([event keyCode] == 53) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
+        push_event(&next);
       } else {
-        out_event->kind = PLATFORM_EVENT_KEY_DOWN;
+        [NSApp sendEvent:event];
       }
-      return PLATFORM_TRUE;
     }
 
-    if ([event type] == NSEventTypeKeyUp) {
-      if ([event keyCode] == 53) {
-        out_event->kind = PLATFORM_EVENT_KEY_UP;
-        out_event->key_code = PLATFORM_KEY_ESCAPE;
-      } else {
-        out_event->kind = PLATFORM_EVENT_KEY_UP;
-      }
-      return PLATFORM_TRUE;
-    }
-
-    if ([event type] == NSEventTypeApplicationDefined && [event subtype] == 0) {
-      out_event->kind = PLATFORM_EVENT_QUIT;
-      return PLATFORM_TRUE;
-    }
-
-    [NSApp sendEvent:event];
     [NSApp updateWindows];
 
-    if (![g_window isVisible]) {
-      out_event->kind = PLATFORM_EVENT_QUIT;
-      return PLATFORM_TRUE;
+    if (g_should_quit || ![g_window isVisible]) {
+      enqueue_quit_if_needed();
     }
 
     NSRect bounds = [g_view bounds];
-    out_event->kind = PLATFORM_EVENT_RESIZE;
-    out_event->width = (uint32_t)bounds.size.width;
-    out_event->height = (uint32_t)bounds.size.height;
-    return PLATFORM_TRUE;
+    uint32_t width = (uint32_t)bounds.size.width;
+    uint32_t height = (uint32_t)bounds.size.height;
+    if (width > 0 && height > 0 && (width != g_last_width || height != g_last_height)) {
+      g_last_width = width;
+      g_last_height = height;
+
+      platform_event resize;
+      memset(&resize, 0, sizeof(resize));
+      resize.struct_size = sizeof(platform_event);
+      resize.kind = PLATFORM_EVENT_RESIZE;
+      resize.width = width;
+      resize.height = height;
+      push_event(&resize);
+    }
+
+    if (pop_event(out_event)) {
+      return PLATFORM_TRUE;
+    }
   }
+
+  return PLATFORM_FALSE;
 }
 
 uint8_t platform_present_frame(const platform_frame *frame) {
@@ -165,10 +226,16 @@ uint8_t platform_present_frame(const platform_frame *frame) {
 void platform_shutdown(void) {
   @autoreleasepool {
     if (g_window != nil) {
+      [g_window setDelegate:nil];
       [g_window close];
       g_window = nil;
     }
+    g_window_delegate = nil;
     g_view = nil;
     g_initialized = false;
+    g_should_quit = false;
+    g_quit_enqueued = false;
+    g_event_head = 0;
+    g_event_tail = 0;
   }
 }

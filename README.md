@@ -13,12 +13,20 @@ Foundational scaffolding for a desktop runtime that keeps strict boundaries:
 .
 ├── crates/
 │   ├── app/             # Rust binary: tessera
+│   ├── engine/          # Tiny HTML tokenizer/DOM/layout/display-list pipeline
+│   ├── engine_loop/     # Scheduler and frame timing
+│   ├── ipc/             # IPC schema, codec, in-process transport
 │   ├── platform_abi/    # Rust ABI mirror types (FFI-safe)
-│   └── renderer/        # Rust software test-pattern renderer
+│   ├── renderer/        # Rust software renderer (patterns + display lists)
+│   └── script_host/     # JS host trait + stub implementation
 ├── include/
 │   └── platform.h       # ABI contract (source of truth)
+├── tests/
+│   ├── fixtures/        # Local HTML fixtures used by headless/golden checks
+│   └── golden/          # Golden frame hashes
 ├── tools/py/
-│   └── run.py           # Build+run helper
+│   ├── run.py           # Build/run/test helper (run, test, golden)
+│   └── ipc_codegen.py   # IPC schema doc generator
 ├── zig/platform/        # Zig-built platform library
 ├── Cargo.toml           # Cargo workspace root
 └── justfile             # One-command workflows
@@ -59,9 +67,24 @@ The runner targets `x86_64-pc-windows-msvc`.
 
 ```bash
 just build   # cargo build --workspace
-just run     # python3 tools/py/run.py
-just test    # cargo test --workspace
+just run     # python3 tools/py/run.py run
+just test    # python3 tools/py/run.py test
+just golden -- --update  # refresh golden hashes
 just fmt     # cargo fmt --all
+```
+
+## CLI commands
+
+```bash
+# Windowed runtime
+cargo run -p tessera -- run --pattern gradient
+
+# Headless RGBA export
+cargo run -p tessera -- headless --input tests/fixtures/basic.html --out /tmp/frame.rgba
+
+# Golden checks
+cargo run -p tessera -- golden
+cargo run -p tessera -- golden --update
 ```
 
 ## ABI design notes
@@ -73,7 +96,7 @@ just fmt     # cargo fmt --all
 
 ## Troubleshooting
 
-- **`zig: command not found`**: Install Zig and ensure it is on `PATH`.
+- **`zig: command not found`**: windowed/native builds on macOS/Windows use a stub fallback. Install Zig for native window integration.
 - **Windows link errors (`link.exe` not found)**: open a developer shell with MSVC tools configured.
 - **`platform_init_window returned false` on non-macOS/Windows hosts**: expected; Linux path is a stub for now.
 - **No window appears on macOS**: ensure app is allowed to create windows (System Settings security prompts).

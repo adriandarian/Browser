@@ -1,0 +1,141 @@
+name = "Browser"
+
+# Default script for platforms without an override.
+setup_script = """
+set -euo pipefail
+
+echo "[setup] Browser project setup"
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "[setup] rustup not found. Install from https://rustup.rs" >&2
+  exit 1
+fi
+
+rustup toolchain install stable >/dev/null 2>&1 || true
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[setup] python3 not found. Install Python 3.11+" >&2
+  exit 1
+fi
+
+if ! command -v just >/dev/null 2>&1; then
+  echo "[setup] installing just via cargo"
+  cargo install just || true
+fi
+
+echo "[setup] done"
+"""
+
+[platform_overrides.macos]
+setup_script = """
+set -euo pipefail
+
+echo "[setup:macOS] Browser project setup"
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "[setup:macOS] rustup not found. Install from https://rustup.rs" >&2
+  exit 1
+fi
+
+rustup toolchain install stable >/dev/null 2>&1 || true
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[setup:macOS] python3 not found. Install Python 3.11+" >&2
+  exit 1
+fi
+
+if ! command -v just >/dev/null 2>&1; then
+  echo "[setup:macOS] installing just via cargo"
+  cargo install just || true
+fi
+
+if ! command -v zig >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    echo "[setup:macOS] installing zig with Homebrew"
+    brew install zig || true
+  else
+    echo "[setup:macOS] zig missing and Homebrew not found. Install Zig 0.12+ manually." >&2
+  fi
+fi
+
+echo "[setup:macOS] tool versions"
+rustc --version || true
+cargo --version || true
+python3 --version || true
+zig version || true
+just --version || true
+
+echo "[setup:macOS] bootstrap checks"
+cargo test --workspace
+python3 tools/py/run.py golden || true
+
+echo "[setup:macOS] done"
+"""
+
+[platform_overrides.windows]
+setup_script = """
+$ErrorActionPreference = 'Stop'
+
+Write-Host "[setup:Windows] Browser project setup"
+
+if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+  Write-Error "rustup not found. Install from https://rustup.rs"
+}
+
+rustup toolchain install stable | Out-Null
+
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+  Write-Error "python not found. Install Python 3.11+"
+}
+
+if (-not (Get-Command just -ErrorAction SilentlyContinue)) {
+  Write-Host "[setup:Windows] installing just via cargo"
+  cargo install just
+}
+
+if (-not (Get-Command zig -ErrorAction SilentlyContinue)) {
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    Write-Host "[setup:Windows] installing zig via winget"
+    winget install -e --id Zig.Zig
+  } else {
+    Write-Warning "zig missing and winget not found. Install Zig 0.12+ manually."
+  }
+}
+
+Write-Host "[setup:Windows] tool versions"
+rustc --version
+cargo --version
+python --version
+if (Get-Command zig -ErrorAction SilentlyContinue) { zig version }
+just --version
+
+Write-Host "[setup:Windows] bootstrap checks"
+cargo test --workspace
+python tools/py/run.py golden
+
+Write-Host "[setup:Windows] done"
+"""
+
+[[actions]]
+name = "Build"
+script = "just build"
+
+[[actions]]
+name = "Run"
+script = "just run"
+
+[[actions]]
+name = "Test"
+script = "just test"
+
+[[actions]]
+name = "Golden"
+script = "just golden -- --update"
+
+[[actions]]
+name = "Fmt"
+script = "just fmt"
+
+[[actions]]
+name = "IPC Schema"
+script = "python3 tools/py/ipc_codegen.py"

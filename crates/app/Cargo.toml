@@ -5,8 +5,16 @@ edition.workspace = true
 license.workspace = true
 build = "build.rs"
 
+[features]
+default = []
+process-split = ["ipc"]
+
 [dependencies]
+engine.workspace = true
+engine_loop.workspace = true
+ipc = { workspace = true, optional = true }
 platform_abi.workspace = true
 renderer.workspace = true
+script_host.workspace = true
 
 [build-dependencies]

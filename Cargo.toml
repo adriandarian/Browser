@@ -1,8 +1,12 @@
 [workspace]
 members = [
   "crates/app",
+  "crates/engine",
+  "crates/engine_loop",
+  "crates/ipc",
   "crates/platform_abi",
   "crates/renderer",
+  "crates/script_host",
 ]
 resolver = "2"
 
@@ -12,5 +16,9 @@ license = "MIT"
 version = "0.1.0"
 
 [workspace.dependencies]
+engine = { path = "crates/engine" }
+engine_loop = { path = "crates/engine_loop" }
+ipc = { path = "crates/ipc" }
 platform_abi = { path = "crates/platform_abi" }
 renderer = { path = "crates/renderer" }
+script_host = { path = "crates/script_host" }

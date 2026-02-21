@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "browser_to_content": [
+    {
+      "name": "LoadDocument",
+      "fields": [
+        ["request_id", "u64"],
+        ["url", "string"],
+        ["html", "string"],
+        ["viewport_width", "u32"],
+        ["viewport_height", "u32"]
+      ]
+    },
+    {
+      "name": "Tick",
+      "fields": [["frame_index", "u64"]]
+    },
+    {
+      "name": "Shutdown",
+      "fields": []
+    }
+  ],
+  "content_to_browser": [
+    {
+      "name": "DocumentReady",
+      "fields": [["request_id", "u64"], ["command_count", "u32"]]
+    },
+    {
+      "name": "Log",
+      "fields": [["level", "u8"], ["message", "string"]]
+    },
+    {
+      "name": "AckShutdown",
+      "fields": []
+    }
+  ]
+}

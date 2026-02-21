@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Workspace tests
+        run: cargo test --workspace
+      - name: Golden checks
+        run: python tools/py/run.py test
+
+  native-smoke:
+    if: ${{ vars.RUN_NATIVE_SMOKE == '1' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.12.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Native build smoke
+        run: cargo build -p tessera
+      - name: Headless golden smoke
+        run: python tools/py/run.py golden

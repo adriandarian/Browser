@@ -15,7 +15,7 @@ pub const PLATFORM_KEY_UNKNOWN: u32 = 0;
 pub const PLATFORM_KEY_ESCAPE: u32 = 27;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlatformConfig {
     pub struct_size: u32,
     pub abi_version: u32,
@@ -25,7 +25,7 @@ pub struct PlatformConfig {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PlatformFrame {
     pub struct_size: u32,
     pub width: u32,
@@ -42,6 +42,30 @@ pub struct PlatformEvent {
     pub key_code: u32,
     pub width: u32,
     pub height: u32,
+}
+
+impl Default for PlatformConfig {
+    fn default() -> Self {
+        Self {
+            struct_size: core::mem::size_of::<Self>() as u32,
+            abi_version: PLATFORM_ABI_VERSION,
+            width: 0,
+            height: 0,
+            title_utf8: core::ptr::null(),
+        }
+    }
+}
+
+impl Default for PlatformFrame {
+    fn default() -> Self {
+        Self {
+            struct_size: core::mem::size_of::<Self>() as u32,
+            width: 0,
+            height: 0,
+            stride_bytes: 0,
+            pixels_rgba8: core::ptr::null(),
+        }
+    }
 }
 
 #[cfg(test)]

@@ -2,22 +2,85 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include "platform.h"
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 @interface BrowserView : NSView
-@property(nonatomic) const uint8_t *pixels;
-@property(nonatomic) uint32_t width;
-@property(nonatomic) uint32_t height;
-@property(nonatomic) uint32_t stride;
+@property(nonatomic) uint8_t *pixels;
+@property(nonatomic) size_t pixels_capacity;
+@property(nonatomic) uint32_t frame_width;
+@property(nonatomic) uint32_t frame_height;
+@property(nonatomic) uint32_t frame_stride;
+- (BOOL)updateFrame:(const platform_frame *)frame;
 @end
 
 @implementation BrowserView
 - (BOOL)isFlipped { return YES; }
+- (instancetype)initWithFrame:(NSRect)frameRect {
+  self = [super initWithFrame:frameRect];
+  if (self) {
+    _pixels = NULL;
+    _pixels_capacity = 0;
+    _frame_width = 0;
+    _frame_height = 0;
+    _frame_stride = 0;
+  }
+  return self;
+}
+
+- (void)dealloc {
+  free(_pixels);
+  _pixels = NULL;
+  _pixels_capacity = 0;
+}
+
+- (BOOL)updateFrame:(const platform_frame *)frame {
+  if (frame == NULL || frame->pixels_rgba8 == NULL || frame->width == 0 || frame->height == 0) {
+    return NO;
+  }
+
+  uint32_t min_stride = frame->width * 4u;
+  if (frame->stride_bytes < min_stride) {
+    return NO;
+  }
+
+  size_t row_bytes = (size_t)min_stride;
+  size_t required = row_bytes * (size_t)frame->height;
+  if (required == 0) {
+    return NO;
+  }
+
+  if (required > self.pixels_capacity) {
+    uint8_t *next = (uint8_t *)realloc(self.pixels, required);
+    if (next == NULL) {
+      return NO;
+    }
+    self.pixels = next;
+    self.pixels_capacity = required;
+  }
+
+  if (frame->stride_bytes == min_stride) {
+    memcpy(self.pixels, frame->pixels_rgba8, required);
+  } else {
+    for (uint32_t y = 0; y < frame->height; ++y) {
+      const uint8_t *src = frame->pixels_rgba8 + ((size_t)y * (size_t)frame->stride_bytes);
+      uint8_t *dst = self.pixels + ((size_t)y * row_bytes);
+      memcpy(dst, src, row_bytes);
+    }
+  }
+
+  self.frame_width = frame->width;
+  self.frame_height = frame->height;
+  self.frame_stride = min_stride;
+  return YES;
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
   (void)dirtyRect;
-  if (!self.pixels || self.width == 0 || self.height == 0) {
+  if (self.pixels == NULL || self.frame_width == 0 || self.frame_height == 0 ||
+      self.frame_stride == 0) {
     [[NSColor blackColor] setFill];
     NSRectFill(self.bounds);
     return;
@@ -25,13 +88,15 @@
 
   CGColorSpaceRef color_space = CGColorSpaceCreateDeviceRGB();
   CGDataProviderRef provider =
-      CGDataProviderCreateWithData(NULL, self.pixels, self.stride * self.height, NULL);
-  CGImageRef image = CGImageCreate(self.width, self.height, 8, 32, self.stride, color_space,
-                                   kCGImageAlphaPremultipliedLast | kCGBitmapByteOrderDefault,
+      CGDataProviderCreateWithData(NULL, self.pixels,
+                                   (size_t)self.frame_stride * (size_t)self.frame_height, NULL);
+  CGImageRef image = CGImageCreate(
+      self.frame_width, self.frame_height, 8, 32, self.frame_stride, color_space,
+      kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big,
                                    provider, NULL, false, kCGRenderingIntentDefault);
 
   CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
-  CGContextDrawImage(ctx, CGRectMake(0, 0, self.width, self.height), image);
+  CGContextDrawImage(ctx, NSRectToCGRect(self.bounds), image);
 
   CGImageRelease(image);
   CGDataProviderRelease(provider);
@@ -89,6 +154,34 @@ static void enqueue_quit_if_needed(void) {
 - (void)windowWillClose:(NSNotification *)notification {
   (void)notification;
   g_should_quit = true;
+  enqueue_quit_if_needed();
+}
+
+- (void)windowDidResize:(NSNotification *)notification {
+  (void)notification;
+  if (g_view == nil) {
+    return;
+  }
+
+  NSRect bounds = [g_view bounds];
+  uint32_t width = (uint32_t)bounds.size.width;
+  uint32_t height = (uint32_t)bounds.size.height;
+  if (width == 0 || height == 0) {
+    return;
+  }
+
+  if (width != g_last_width || height != g_last_height) {
+    g_last_width = width;
+    g_last_height = height;
+
+    platform_event resize;
+    memset(&resize, 0, sizeof(resize));
+    resize.struct_size = sizeof(platform_event);
+    resize.kind = PLATFORM_EVENT_RESIZE;
+    resize.width = width;
+    resize.height = height;
+    push_event(&resize);
+  }
 }
 @end
 
@@ -105,6 +198,7 @@ uint8_t platform_init_window(const platform_config *config) {
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+    [NSApp finishLaunching];
 
     NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                        NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable;
@@ -159,18 +253,15 @@ uint8_t platform_poll_event(platform_event *out_event) {
                                        untilDate:[NSDate distantPast]
                                           inMode:NSDefaultRunLoopMode
                                          dequeue:YES])) {
-      platform_event next;
-      memset(&next, 0, sizeof(next));
-      next.struct_size = sizeof(platform_event);
-
       if ([event type] == NSEventTypeKeyDown) {
-        next.kind = PLATFORM_EVENT_KEY_DOWN;
-        next.key_code = ([event keyCode] == 53) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
-        push_event(&next);
-      } else if ([event type] == NSEventTypeKeyUp) {
-        next.kind = PLATFORM_EVENT_KEY_UP;
-        next.key_code = ([event keyCode] == 53) ? PLATFORM_KEY_ESCAPE : PLATFORM_KEY_UNKNOWN;
-        push_event(&next);
+        if ([event keyCode] == 53) {
+          platform_event next;
+          memset(&next, 0, sizeof(next));
+          next.struct_size = sizeof(platform_event);
+          next.kind = PLATFORM_EVENT_KEY_DOWN;
+          next.key_code = PLATFORM_KEY_ESCAPE;
+          push_event(&next);
+        }
       } else {
         [NSApp sendEvent:event];
       }
@@ -180,22 +271,6 @@ uint8_t platform_poll_event(platform_event *out_event) {
 
     if (g_should_quit || ![g_window isVisible]) {
       enqueue_quit_if_needed();
-    }
-
-    NSRect bounds = [g_view bounds];
-    uint32_t width = (uint32_t)bounds.size.width;
-    uint32_t height = (uint32_t)bounds.size.height;
-    if (width > 0 && height > 0 && (width != g_last_width || height != g_last_height)) {
-      g_last_width = width;
-      g_last_height = height;
-
-      platform_event resize;
-      memset(&resize, 0, sizeof(resize));
-      resize.struct_size = sizeof(platform_event);
-      resize.kind = PLATFORM_EVENT_RESIZE;
-      resize.width = width;
-      resize.height = height;
-      push_event(&resize);
     }
 
     if (pop_event(out_event)) {
@@ -213,10 +288,9 @@ uint8_t platform_present_frame(const platform_frame *frame) {
   }
 
   @autoreleasepool {
-    g_view.pixels = frame->pixels_rgba8;
-    g_view.width = frame->width;
-    g_view.height = frame->height;
-    g_view.stride = frame->stride_bytes;
+    if (![g_view updateFrame:frame]) {
+      return PLATFORM_FALSE;
+    }
     [g_view setNeedsDisplay:YES];
     [g_view displayIfNeeded];
     return PLATFORM_TRUE;
@@ -235,6 +309,8 @@ void platform_shutdown(void) {
     g_initialized = false;
     g_should_quit = false;
     g_quit_enqueued = false;
+    g_last_width = 0;
+    g_last_height = 0;
     g_event_head = 0;
     g_event_tail = 0;
   }

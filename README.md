@@ -52,6 +52,13 @@ just run
 - `aarch64-apple-darwin` on Apple Silicon
 - `x86_64-apple-darwin` on Intel Macs
 
+macOS platform backend notes:
+- Cocoa window + event pump lives in `/Users/dariana/personal/Browser/zig/platform/src/platform_macos.m`.
+- `platform_present_frame` takes Rust-provided RGBA8 (`stride_bytes` respected), CPU-copies into a view-owned buffer, then blits in `drawRect`.
+- Supported runtime events: window close -> `PLATFORM_EVENT_QUIT`, `Esc` -> `PLATFORM_EVENT_KEY_DOWN`, resize -> `PLATFORM_EVENT_RESIZE`.
+- Build requires Apple SDK headers/frameworks (`AppKit`, `Foundation`, `CoreGraphics`). With Xcode or CLT installed, `/Users/dariana/personal/Browser/crates/app/build.rs` uses `xcrun --show-sdk-path` and passes `-Dsdk_root=...` to Zig automatically.
+- Exported C ABI is restricted to symbols declared in `/Users/dariana/personal/Browser/include/platform.h` and checked by `zig build abi-symbols` in `/Users/dariana/personal/Browser/zig/platform`.
+
 ### Windows (MSVC)
 
 Use the x64 Native Tools prompt (or equivalent environment with MSVC linker available):

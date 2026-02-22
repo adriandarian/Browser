@@ -63,7 +63,16 @@ pub fn build(b: *std.Build) void {
     });
     check_symbols.addFileArg(symbols_path);
 
+    const check_no_extra_platform_symbols = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        "extra=\"$(grep '^platform_' \"$1\" | grep -v ':$' | grep -v -E '^(platform_get_abi_version|platform_init_window|platform_poll_event|platform_present_frame|platform_shutdown)$' || true)\"; if [ -n \"$extra\" ]; then echo \"unexpected platform symbol(s):\"; echo \"$extra\"; exit 1; fi",
+        "_",
+    });
+    check_no_extra_platform_symbols.addFileArg(symbols_path);
+
     const abi_symbols_step = b.step("abi-symbols", "Export and verify ABI symbol list");
     abi_symbols_step.dependOn(&dump_symbols.step);
     abi_symbols_step.dependOn(&check_symbols.step);
+    abi_symbols_step.dependOn(&check_no_extra_platform_symbols.step);
 }

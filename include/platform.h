@@ -8,11 +8,12 @@
 // ABI stability rules:
 // - All structs must remain plain-old-data with fixed-width integer types.
 // - Do not use C `bool` in function signatures or struct fields; use uint8_t.
-// - Structs use native C ABI alignment (`repr(C)` in Rust); do not pack structs.
+// - Structs use native C ABI alignment (`repr(C)` in Rust mirrors this exactly).
+// - Never change packing/alignment rules (no `#pragma pack`, no packed attributes).
 // - To extend a struct safely, append trailing fields and include a size field.
 // - Never reorder or remove existing fields.
 // - Bump PLATFORM_ABI_VERSION on any breaking ABI change.
-#define PLATFORM_ABI_VERSION 2u
+#define PLATFORM_ABI_VERSION ((uint32_t)2u)
 
 #define PLATFORM_FALSE ((uint8_t)0u)
 #define PLATFORM_TRUE ((uint8_t)1u)
@@ -57,6 +58,12 @@ typedef struct platform_event {
   uint32_t width;
   uint32_t height;
 } platform_event;
+
+// ABI sanity checks. Pointer-sized structs are checked in Rust tests for both
+// 32-bit and 64-bit expectations.
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Static_assert(sizeof(platform_event) == 20u, "platform_event ABI size changed");
+#endif
 
 #ifdef __cplusplus
 extern "C" {

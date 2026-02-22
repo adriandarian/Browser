@@ -71,7 +71,28 @@ impl Default for PlatformFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::mem::{align_of, size_of};
+    use core::mem::{MaybeUninit, align_of, size_of};
+
+    fn offset_of_config_width() -> usize {
+        let uninit = MaybeUninit::<PlatformConfig>::uninit();
+        let base = uninit.as_ptr();
+        // SAFETY: We compute field offsets from a dangling base pointer only.
+        unsafe { (core::ptr::addr_of!((*base).width) as usize) - (base as usize) }
+    }
+
+    fn offset_of_frame_pixels() -> usize {
+        let uninit = MaybeUninit::<PlatformFrame>::uninit();
+        let base = uninit.as_ptr();
+        // SAFETY: We compute field offsets from a dangling base pointer only.
+        unsafe { (core::ptr::addr_of!((*base).pixels_rgba8) as usize) - (base as usize) }
+    }
+
+    fn offset_of_event_height() -> usize {
+        let uninit = MaybeUninit::<PlatformEvent>::uninit();
+        let base = uninit.as_ptr();
+        // SAFETY: We compute field offsets from a dangling base pointer only.
+        unsafe { (core::ptr::addr_of!((*base).height) as usize) - (base as usize) }
+    }
 
     #[test]
     fn abi_constants_match_contract() {
@@ -88,6 +109,7 @@ mod tests {
 
         assert_eq!(size_of::<PlatformConfig>(), expected_size);
         assert_eq!(align_of::<PlatformConfig>(), expected_align);
+        assert_eq!(offset_of_config_width(), 8);
     }
 
     #[test]
@@ -98,11 +120,13 @@ mod tests {
 
         assert_eq!(size_of::<PlatformFrame>(), expected_size);
         assert_eq!(align_of::<PlatformFrame>(), expected_align);
+        assert_eq!(offset_of_frame_pixels(), 16);
     }
 
     #[test]
     fn platform_event_layout_matches_c_abi() {
         assert_eq!(size_of::<PlatformEvent>(), 20);
         assert_eq!(align_of::<PlatformEvent>(), 4);
+        assert_eq!(offset_of_event_height(), 16);
     }
 }

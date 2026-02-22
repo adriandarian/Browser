@@ -1,4 +1,4 @@
-# Tessera Monorepo (Rust + Zig + Python)
+# Browser
 
 Foundational scaffolding for a desktop runtime that keeps strict boundaries:
 
@@ -12,7 +12,7 @@ Foundational scaffolding for a desktop runtime that keeps strict boundaries:
 ```text
 .
 ├── crates/
-│   ├── app/             # Rust binary: tessera
+│   ├── app/             # Rust binary: browser
 │   ├── engine/          # Tiny HTML tokenizer/DOM/layout/display-list pipeline
 │   ├── engine_loop/     # Scheduler and frame timing
 │   ├── ipc/             # IPC schema, codec, in-process transport
@@ -69,7 +69,7 @@ The runner targets `x86_64-pc-windows-msvc`.
 just build   # cargo build --workspace
 just run     # python3 tools/py/run.py run
 just test    # python3 tools/py/run.py test
-just golden -- --update  # refresh golden hashes
+just golden --update  # refresh golden hashes
 just fmt     # cargo fmt --all
 ```
 
@@ -77,14 +77,14 @@ just fmt     # cargo fmt --all
 
 ```bash
 # Windowed runtime
-cargo run -p tessera -- run --pattern gradient
+cargo run -p browser -- run --pattern gradient
 
 # Headless RGBA export
-cargo run -p tessera -- headless --input tests/fixtures/basic.html --out /tmp/frame.rgba
+cargo run -p browser -- headless --input tests/fixtures/basic.html --out /tmp/frame.rgba
 
 # Golden checks
-cargo run -p tessera -- golden
-cargo run -p tessera -- golden --update
+cargo run -p browser -- golden
+cargo run -p browser -- golden --update
 ```
 
 ## ABI design notes

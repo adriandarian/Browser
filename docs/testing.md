@@ -20,7 +20,7 @@ This repository uses deterministic headless rendering for baseline checks.
 The Rust binary supports explicit frame export:
 
 ```bash
-cargo run -p tessera -- headless \
+cargo run -p browser -- headless \
   --input tests/fixtures/basic.html \
   --width 960 --height 540 --frame 0 \
   --out /tmp/basic.rgba

@@ -61,7 +61,7 @@ struct DocumentScene {
 
 fn main() {
     if let Err(err) = try_main() {
-        eprintln!("tessera failed: {err}");
+        eprintln!("browser failed: {err}");
         std::process::exit(1);
     }
 }
@@ -222,7 +222,7 @@ fn parse_golden_args(args: impl Iterator<Item = String>) -> Result<Command, Stri
 }
 
 fn run_windowed(args: RunArgs) -> Result<(), String> {
-    let title = CString::new("Tessera")
+    let title = CString::new("Browser")
         .map_err(|_| "window title contains interior null byte".to_string())?;
 
     let mut width = args.width;
@@ -570,16 +570,16 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 fn log_info(message: &str) {
-    eprintln!("[tessera][info] {message}");
+    eprintln!("[browser][info] {message}");
 }
 
 fn log_warn(message: &str) {
-    eprintln!("[tessera][warn] {message}");
+    eprintln!("[browser][warn] {message}");
 }
 
 fn log_debug(message: &str) {
     if std::env::var_os("TESSERA_DEBUG").is_some() {
-        eprintln!("[tessera][debug] {message}");
+        eprintln!("[browser][debug] {message}");
     }
 }
 

@@ -6,14 +6,14 @@
 #include <stdint.h>
 #include <string.h>
 
-@interface TesseraView : NSView
+@interface BrowserView : NSView
 @property(nonatomic) const uint8_t *pixels;
 @property(nonatomic) uint32_t width;
 @property(nonatomic) uint32_t height;
 @property(nonatomic) uint32_t stride;
 @end
 
-@implementation TesseraView
+@implementation BrowserView
 - (BOOL)isFlipped { return YES; }
 - (void)drawRect:(NSRect)dirtyRect {
   (void)dirtyRect;
@@ -45,7 +45,7 @@ static unsigned int g_event_head = 0;
 static unsigned int g_event_tail = 0;
 
 static NSWindow *g_window = nil;
-static TesseraView *g_view = nil;
+static BrowserView *g_view = nil;
 static bool g_initialized = false;
 static bool g_should_quit = false;
 static bool g_quit_enqueued = false;
@@ -82,17 +82,17 @@ static void enqueue_quit_if_needed(void) {
   g_quit_enqueued = true;
 }
 
-@interface TesseraWindowDelegate : NSObject <NSWindowDelegate>
+@interface BrowserWindowDelegate : NSObject <NSWindowDelegate>
 @end
 
-@implementation TesseraWindowDelegate
+@implementation BrowserWindowDelegate
 - (void)windowWillClose:(NSNotification *)notification {
   (void)notification;
   g_should_quit = true;
 }
 @end
 
-static TesseraWindowDelegate *g_window_delegate = nil;
+static BrowserWindowDelegate *g_window_delegate = nil;
 
 uint32_t platform_get_abi_version(void) { return PLATFORM_ABI_VERSION; }
 
@@ -115,16 +115,16 @@ uint8_t platform_init_window(const platform_config *config) {
                                               backing:NSBackingStoreBuffered
                                                 defer:NO];
 
-    NSString *title = @"Tessera";
+    NSString *title = @"Browser";
     if (config->title_utf8 != NULL) {
       title = [NSString stringWithUTF8String:config->title_utf8];
     }
     [g_window setTitle:title];
 
-    g_window_delegate = [[TesseraWindowDelegate alloc] init];
+    g_window_delegate = [[BrowserWindowDelegate alloc] init];
     [g_window setDelegate:g_window_delegate];
 
-    g_view = [[TesseraView alloc] initWithFrame:frame];
+    g_view = [[BrowserView alloc] initWithFrame:frame];
     [g_window setContentView:g_view];
     [g_window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];

@@ -3,11 +3,16 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const lib = b.addStaticLibrary(.{
-        .name = "platform",
+    const sdk_root = b.option([]const u8, "sdk_root", "macOS SDK root path");
+    const module = b.createModule(.{
         .target = target,
         .optimize = optimize,
+    });
+
+    const lib = b.addLibrary(.{
+        .name = "platform",
+        .linkage = .static,
+        .root_module = module,
     });
 
     lib.addIncludePath(b.path("../../include"));
@@ -19,7 +24,18 @@ pub fn build(b: *std.Build) void {
         lib.linkSystemLibrary("user32");
         lib.linkSystemLibrary("gdi32");
     } else if (os_tag == .macos) {
-        lib.addCSourceFile(.{ .file = b.path("src/platform_macos.m"), .flags = &.{ "-fobjc-arc" } });
+        if (sdk_root) |sdk| {
+            const frameworks_path = b.fmt("{s}/System/Library/Frameworks", .{sdk});
+            const usr_include_path = b.fmt("{s}/usr/include", .{sdk});
+            lib.addFrameworkPath(.{ .cwd_relative = frameworks_path });
+            lib.addSystemFrameworkPath(.{ .cwd_relative = frameworks_path });
+            lib.addCSourceFile(.{
+                .file = b.path("src/platform_macos.m"),
+                .flags = &.{ "-fobjc-arc", "-isysroot", sdk, "-isystem", usr_include_path },
+            });
+        } else {
+            lib.addCSourceFile(.{ .file = b.path("src/platform_macos.m"), .flags = &.{ "-fobjc-arc" } });
+        }
         lib.linkFramework("AppKit");
         lib.linkFramework("CoreGraphics");
         lib.linkFramework("Foundation");

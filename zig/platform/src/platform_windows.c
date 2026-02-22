@@ -94,7 +94,7 @@ uint8_t platform_init_window(const platform_config *config) {
   }
 
   HINSTANCE instance = GetModuleHandleW(NULL);
-  const wchar_t *class_name = L"TesseraWindowClass";
+  const wchar_t *class_name = L"BrowserWindowClass";
 
   WNDCLASSW wc;
   memset(&wc, 0, sizeof(wc));
@@ -113,7 +113,7 @@ uint8_t platform_init_window(const platform_config *config) {
   RECT rect = {0, 0, (LONG)config->width, (LONG)config->height};
   AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
-  g_hwnd = CreateWindowExW(0, class_name, L"Tessera", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+  g_hwnd = CreateWindowExW(0, class_name, L"Browser", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                            CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, NULL,
                            NULL, instance, NULL);
   if (g_hwnd == NULL) {

@@ -35,12 +35,12 @@ def run_command(cmd: list[str]) -> int:
     return result.returncode
 
 
-def cargo_run_tessera(
+def cargo_run_browser(
     args: list[str],
     release: bool = False,
     target: str | None = None,
 ) -> int:
-    cmd = ["cargo", "run", "-p", "tessera"]
+    cmd = ["cargo", "run", "-p", "browser"]
     if target:
         cmd.extend(["--target", target])
     if release:
@@ -67,7 +67,7 @@ def cmd_run(parsed: argparse.Namespace) -> int:
     if parsed.height:
         app_args.extend(["--height", str(parsed.height)])
 
-    return cargo_run_tessera(app_args, release=parsed.release, target=target)
+    return cargo_run_browser(app_args, release=parsed.release, target=target)
 
 
 def cmd_golden(parsed: argparse.Namespace) -> int:
@@ -85,7 +85,7 @@ def cmd_golden(parsed: argparse.Namespace) -> int:
     if parsed.frame is not None:
         app_args.extend(["--frame", str(parsed.frame)])
 
-    return cargo_run_tessera(app_args, release=parsed.release)
+    return cargo_run_browser(app_args, release=parsed.release)
 
 
 def cmd_test(parsed: argparse.Namespace) -> int:
@@ -106,7 +106,7 @@ def cmd_test(parsed: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build, run, and test tessera")
+    parser = argparse.ArgumentParser(description="Build, run, and test browser")
     subparsers = parser.add_subparsers(dest="command", required=False)
 
     run_parser = subparsers.add_parser("run", help="Run the windowed app")

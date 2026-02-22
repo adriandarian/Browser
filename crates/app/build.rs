@@ -27,6 +27,26 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repo_root = manifest_dir.parent().unwrap().parent().unwrap();
     let zig_dir = repo_root.join("zig/platform");
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo_root.join("include/platform.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        zig_dir.join("build.zig").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        zig_dir.join("src/platform_windows.c").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        zig_dir.join("src/platform_macos.m").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        zig_dir.join("src/platform_stub.c").display()
+    );
     let out_dir = repo_root
         .join("target/zig-out")
         .join(&target)

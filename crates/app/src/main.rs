@@ -637,6 +637,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_top_level_pattern_flag() {
+        let command = parse_cli(vec!["--pattern", "solid"].into_iter().map(String::from)).unwrap();
+        let Command::Run(run) = command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.pattern, Pattern::Solid);
+    }
+
+    #[test]
     fn parses_headless_required_flags() {
         let command = parse_cli(
             vec![

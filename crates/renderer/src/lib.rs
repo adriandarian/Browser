@@ -51,8 +51,8 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(width: u32, height: u32) -> Self {
         let mut renderer = Self {
-            width,
-            height,
+            width: 0,
+            height: 0,
             pixels: Vec::new(),
             pattern: Pattern::Gradient,
         };
@@ -61,6 +61,9 @@ impl Renderer {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        if self.width == width && self.height == height {
+            return;
+        }
         self.width = width;
         self.height = height;
         let new_len = pixel_len(width, height);
@@ -92,8 +95,8 @@ impl Renderer {
                 render_gradient(&mut self.pixels, self.width, self.height, frame_index)
             }
             Pattern::Solid => {
-                let pulse = ((time_seconds * 2.0).sin() * 0.5 + 0.5) * 255.0;
-                clear_rgba(&mut self.pixels, pulse as u8, 32, 120, 255);
+                let pulse = pulse_u8(frame_index, time_seconds);
+                clear_rgba(&mut self.pixels, pulse, 32, 120, 255);
             }
             Pattern::Rects => render_rects(&mut self.pixels, self.width, self.height, frame_index),
         }
@@ -108,16 +111,16 @@ impl Renderer {
     pub fn render_display_list(
         &mut self,
         frame_index: u64,
-        _time_seconds: f32,
+        time_seconds: f32,
         rects: &[DrawRect],
         overlay: Option<OverlayInfo>,
     ) -> &[u8] {
-        let bg_pulse = ((frame_index as f32 / 120.0).sin() * 0.5 + 0.5) * 16.0;
+        let bg_pulse = pulse_u8(frame_index, time_seconds) >> 4;
         clear_rgba(
             &mut self.pixels,
-            20_u8.saturating_add(bg_pulse as u8),
-            20_u8.saturating_add(bg_pulse as u8),
-            24_u8.saturating_add(bg_pulse as u8),
+            20_u8.saturating_add(bg_pulse),
+            20_u8.saturating_add(bg_pulse),
+            24_u8.saturating_add(bg_pulse),
             255,
         );
 
@@ -154,6 +157,25 @@ fn pixel_len(width: u32, height: u32) -> usize {
     (width as usize)
         .saturating_mul(height as usize)
         .saturating_mul(4)
+}
+
+fn pulse_u8(frame_index: u64, time_seconds: f32) -> u8 {
+    // Quantize time first, then hash with frame index for deterministic animation.
+    let time_ms = if time_seconds.is_finite() {
+        (time_seconds.max(0.0) * 1000.0) as u64
+    } else {
+        0
+    };
+    mix_to_u8(frame_index.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ time_ms)
+}
+
+fn mix_to_u8(mut x: u64) -> u8 {
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    x as u8
 }
 
 fn clear_rgba(framebuffer: &mut [u8], r: u8, g: u8, b: u8, a: u8) {
@@ -389,6 +411,26 @@ mod tests {
         let frame = renderer.render(42, 1.25);
 
         assert_eq!(fnv1a64(frame), 0xaa3e6ff366d761a5);
+    }
+
+    #[test]
+    fn deterministic_frame_hash_with_time_input() {
+        let mut renderer = Renderer::new(64, 32);
+        renderer.set_pattern(Pattern::Solid);
+        let frame = renderer.render(77, 1.5);
+
+        assert_eq!(fnv1a64(frame), 0xb10375b873063325);
+    }
+
+    #[test]
+    fn resize_reuses_capacity_when_shrinking() {
+        let mut renderer = Renderer::new(64, 64);
+        let initial_capacity = renderer.pixels.capacity();
+        renderer.resize(32, 32);
+        let shrunk_capacity = renderer.pixels.capacity();
+
+        assert_eq!(renderer.pixels.len(), 32 * 32 * 4);
+        assert_eq!(shrunk_capacity, initial_capacity);
     }
 
     #[test]

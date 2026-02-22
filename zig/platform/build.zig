@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) void {
     const os_tag = target.result.os.tag;
     if (os_tag == .windows) {
         lib.addCSourceFile(.{ .file = b.path("src/platform_windows.c"), .flags = &.{} });
+        lib.linkSystemLibrary("kernel32");
         lib.linkSystemLibrary("user32");
         lib.linkSystemLibrary("gdi32");
     } else if (os_tag == .macos) {

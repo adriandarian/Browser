@@ -63,6 +63,12 @@ just run
 
 The runner targets `x86_64-pc-windows-msvc`.
 
+Windows platform backend notes:
+- Win32 window + message pump lives in `/Users/dariana/personal/Browser/zig/platform/src/platform_windows.c`.
+- Events wired for runtime loop: `WM_CLOSE -> PLATFORM_EVENT_QUIT`, `Esc -> PLATFORM_EVENT_KEY_DOWN`, `WM_SIZE -> PLATFORM_EVENT_RESIZE`.
+- `platform_present_frame` accepts Rust-provided RGBA8 (`stride_bytes` respected), converts to BGRA, and presents via `StretchDIBits`.
+- Exported ABI remains limited to the symbols declared in `/Users/dariana/personal/Browser/include/platform.h`.
+
 ## Development commands
 
 ```bash
@@ -103,3 +109,9 @@ cargo run -p browser -- golden --update
 - **Windows link errors (`link.exe` not found)**: open a developer shell with MSVC tools configured.
 - **`platform_init_window returned false` on non-macOS/Windows hosts**: expected; Linux path is a stub for now.
 - **No window appears on macOS**: ensure app is allowed to create windows (System Settings security prompts).
+
+## CI hints (optional)
+
+- For Windows validation, run on `windows-latest` with MSVC (default Rust target): `cargo build -p browser --release`.
+- Keep Zig available in the CI image and let `/Users/dariana/personal/Browser/crates/app/build.rs` invoke `zig build` for the platform static library.
+- Optional ABI smoke check on macOS/Linux runners: `zig build abi-symbols` from `/Users/dariana/personal/Browser/zig/platform`.

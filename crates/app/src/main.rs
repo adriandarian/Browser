@@ -30,6 +30,7 @@ enum Command {
 struct RunArgs {
     pattern: Pattern,
     input: Option<PathBuf>,
+    pattern_only: bool,
     width: u32,
     height: u32,
 }
@@ -83,7 +84,8 @@ fn parse_cli(args: impl Iterator<Item = String>) -> Result<Command, String> {
     if args.is_empty() {
         return Ok(Command::Run(RunArgs {
             pattern: Pattern::Gradient,
-            input: None,
+            input: default_document_input_path(),
+            pattern_only: false,
             width: 960,
             height: 540,
         }));
@@ -106,6 +108,7 @@ fn parse_cli(args: impl Iterator<Item = String>) -> Result<Command, String> {
 fn parse_run_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
     let mut pattern = Pattern::Gradient;
     let mut input = None;
+    let mut pattern_only = false;
     let mut width = 960_u32;
     let mut height = 540_u32;
 
@@ -121,6 +124,9 @@ fn parse_run_args(args: impl Iterator<Item = String>) -> Result<Command, String>
             "--input" => {
                 input = Some(PathBuf::from(next_arg(&mut args, "--input")?));
             }
+            "--pattern-only" => {
+                pattern_only = true;
+            }
             "--width" => {
                 width = parse_u32(&next_arg(&mut args, "--width")?, "--width")?;
             }
@@ -131,9 +137,16 @@ fn parse_run_args(args: impl Iterator<Item = String>) -> Result<Command, String>
         }
     }
 
+    let input = if pattern_only {
+        None
+    } else {
+        input.or_else(default_document_input_path)
+    };
+
     Ok(Command::Run(RunArgs {
         pattern,
         input,
+        pattern_only,
         width,
         height,
     }))
@@ -285,9 +298,11 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
                 PLATFORM_EVENT_QUIT => running = false,
                 PLATFORM_EVENT_KEY_DOWN if event.key_code == PLATFORM_KEY_ESCAPE => running = false,
                 PLATFORM_EVENT_KEY_DOWN => {
-                    let next = renderer.pattern().next();
-                    renderer.set_pattern(next);
-                    log_info(&format!("pattern toggled pattern={next:?}"));
+                    if args.pattern_only {
+                        let next = renderer.pattern().next();
+                        renderer.set_pattern(next);
+                        log_info(&format!("pattern toggled pattern={next:?}"));
+                    }
                 }
                 PLATFORM_EVENT_RESIZE => {
                     if event.width > 0
@@ -569,6 +584,15 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
+fn default_document_input_path() -> Option<PathBuf> {
+    let path = PathBuf::from("tests/fixtures/basic.html");
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
 fn log_info(message: &str) {
     eprintln!("[browser][info] {message}");
 }
@@ -578,7 +602,7 @@ fn log_warn(message: &str) {
 }
 
 fn log_debug(message: &str) {
-    if std::env::var_os("TESSERA_DEBUG").is_some() {
+    if std::env::var_os("BROWSER_DEBUG").is_some() {
         eprintln!("[browser][debug] {message}");
     }
 }

@@ -60,6 +60,8 @@ def cmd_run(parsed: argparse.Namespace) -> int:
     app_args = ["run"]
     if parsed.pattern:
         app_args.extend(["--pattern", parsed.pattern])
+    if parsed.pattern_only:
+        app_args.append("--pattern-only")
     if parsed.input:
         app_args.extend(["--input", parsed.input])
     if parsed.width:
@@ -113,6 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--release", action="store_true", help="Build in release mode")
     run_parser.add_argument("--os", choices=["macos", "windows"], help="Target OS triple family")
     run_parser.add_argument("--pattern", choices=["gradient", "solid", "rects"], help="Pattern mode")
+    run_parser.add_argument("--pattern-only", action="store_true", help="Force pattern mode instead of loading default fixture")
     run_parser.add_argument("--input", help="Optional local HTML file for document rendering")
     run_parser.add_argument("--width", type=int, help="Window width")
     run_parser.add_argument("--height", type=int, help="Window height")

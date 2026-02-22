@@ -79,6 +79,9 @@ just fmt     # cargo fmt --all
 # Windowed runtime
 cargo run -p browser -- run --pattern gradient
 
+# Force test-pattern mode (skip default fixture render)
+cargo run -p browser -- run --pattern-only --pattern gradient
+
 # Headless RGBA export
 cargo run -p browser -- headless --input tests/fixtures/basic.html --out /tmp/frame.rgba
 

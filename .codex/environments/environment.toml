@@ -36,12 +36,12 @@ command = "just build"
 [[actions]]
 name = "Run (macOS)"
 icon = "run"
-command = "bash --noprofile --norc -lc 'python3 tools/py/run.py run --os macos'"
+command = "bash --noprofile --norc -lc 'python3 tools/py/run.py run'"
 
 [[actions]]
 name = "Run (Windows)"
 icon = "run"
-command = "bash --noprofile --norc -lc 'python tools/py/run.py run --os windows'"
+command = "bash --noprofile --norc -lc 'python tools/py/run.py run'"
 
 [[actions]]
 name = "Test"
@@ -51,7 +51,7 @@ command = "just test"
 [[actions]]
 name = "Golden"
 icon = "debug"
-command = "just golden --update"
+command = "just golden"
 
 [[actions]]
 name = "Fmt"
@@ -76,7 +76,7 @@ if ! command -v zig >/dev/null 2>&1; then
   fi
 fi
 cargo test --workspace
-python3 tools/py/run.py golden || true
+python3 tools/py/run.py test --update || true
 '"""
 
 [[actions]]
@@ -87,5 +87,5 @@ if command -v winget >/dev/null 2>&1; then
   winget install -e --id Zig.Zig || true
 fi
 cargo test --workspace
-python tools/py/run.py golden || true
+python tools/py/run.py test --update || true
 '"""

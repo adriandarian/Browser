@@ -45,13 +45,19 @@ pub struct LayoutTree {
     pub boxes: Vec<LayoutBox>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DisplayCommand {
     FillRect {
         x: u32,
         y: u32,
         width: u32,
         height: u32,
+        color: [u8; 4],
+    },
+    DrawText {
+        x: u32,
+        y: u32,
+        text: String,
         color: [u8; 4],
     },
 }
@@ -283,6 +289,15 @@ pub fn build_display_list(
             height: layout_box.height,
             color,
         });
+
+        if let Some(label) = label_for_node(document, layout_box.node_id) {
+            commands.push(DisplayCommand::DrawText {
+                x: layout_box.x.saturating_add(4),
+                y: layout_box.y.saturating_add(4),
+                text: label,
+                color: [18, 24, 45, 255],
+            });
+        }
     }
 
     DisplayList {
@@ -401,17 +416,46 @@ fn element_height(tag_name: &str) -> u32 {
 fn color_for_node(document: &Document, node_id: NodeId) -> [u8; 4] {
     match &document.nodes[node_id].kind {
         NodeKind::Element(el) => match el.tag_name.as_str() {
-            "html" => [225, 230, 246, 255],
-            "body" => [232, 237, 250, 255],
-            "h1" => [125, 143, 236, 255],
-            "h2" => [140, 167, 241, 255],
-            "p" => [176, 190, 245, 255],
-            "div" => [162, 178, 240, 255],
-            "section" => [152, 169, 234, 255],
-            _ => [188, 198, 240, 255],
+            "html" => [233, 237, 248, 255],
+            "body" => [236, 241, 251, 255],
+            "header" | "footer" => [195, 212, 250, 255],
+            "main" | "article" | "section" | "aside" => [206, 221, 250, 255],
+            "nav" => [187, 206, 249, 255],
+            "h1" => [169, 192, 248, 255],
+            "h2" | "h3" => [179, 201, 248, 255],
+            "p" | "li" | "td" | "th" => [217, 228, 251, 255],
+            _ => [210, 224, 250, 255],
         },
-        NodeKind::Text(_) => [96, 109, 173, 255],
+        NodeKind::Text(_) => [244, 246, 252, 255],
     }
+}
+
+fn label_for_node(document: &Document, node_id: NodeId) -> Option<String> {
+    match &document.nodes[node_id].kind {
+        NodeKind::Element(el) => Some(format!("<{}>", el.tag_name)),
+        NodeKind::Text(text) => {
+            let condensed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            if condensed.is_empty() {
+                None
+            } else {
+                Some(truncate_text(&condensed, 64))
+            }
+        }
+    }
+}
+
+fn truncate_text(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let suffix = "...";
+    let keep = max_chars.saturating_sub(suffix.len());
+    let mut out = String::with_capacity(max_chars + suffix.len());
+    for ch in text.chars().take(keep) {
+        out.push(ch);
+    }
+    out.push_str(suffix);
+    out
 }
 
 fn normalize_tag_name(raw: &str) -> String {
@@ -488,6 +532,20 @@ mod tests {
         assert_eq!(
             ys,
             output.layout.boxes.iter().map(|b| b.y).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn display_list_includes_text_commands() {
+        let input = "<html><body><h1>Hello</h1><p>Visible text</p></body></html>";
+        let output = render_document(input, 640, 360);
+
+        assert!(
+            output
+                .display_list
+                .commands
+                .iter()
+                .any(|cmd| matches!(cmd, DisplayCommand::DrawText { .. }))
         );
     }
 

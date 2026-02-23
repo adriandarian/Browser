@@ -12,7 +12,7 @@ test:
     python3 tools/py/run.py test
 
 golden *ARGS:
-    python3 tools/py/run.py golden {{ARGS}}
+    python3 tools/py/run.py test --update {{ARGS}}
 
 fmt:
     cargo fmt --all

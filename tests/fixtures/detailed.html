@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser HTML5 Demo Fixture</title>
+  </head>
+  <body>
+    <header>
+      <h1>Browser HTML5 Element Showcase</h1>
+      <p>
+        This fixture is designed to exercise parser, layout, and text rendering
+        paths with a broad set of semantic and inline elements.
+      </p>
+      <nav>
+        <a href="#structure">Structure</a>
+        <a href="#lists">Lists</a>
+        <a href="#tabular">Tables</a>
+        <a href="#forms">Forms</a>
+        <a href="#media">Media</a>
+        <a href="#inline">Inline</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="structure">
+        <h2>Document Structure</h2>
+        <article>
+          <h3>Article Example</h3>
+          <p>
+            Articles, sections, asides, and footers are represented as explicit
+            blocks so visual nesting is easy to inspect.
+          </p>
+        </article>
+        <aside>
+          <p>
+            Aside content: secondary notes, warnings, and helper context for the
+            primary content flow.
+          </p>
+        </aside>
+        <footer>
+          <small>Section footer with metadata and source hints.</small>
+        </footer>
+      </section>
+
+      <section id="lists">
+        <h2>List Variants</h2>
+        <p>Unordered list:</p>
+        <ul>
+          <li>Alpha node</li>
+          <li>Beta node</li>
+          <li>Gamma node</li>
+        </ul>
+        <p>Ordered list:</p>
+        <ol>
+          <li>Step one</li>
+          <li>Step two</li>
+          <li>Step three</li>
+        </ol>
+        <p>Description list:</p>
+        <dl>
+          <dt>DOM</dt>
+          <dd>Tree of parsed nodes and text values.</dd>
+          <dt>Layout</dt>
+          <dd>Stacked boxes derived from node types.</dd>
+          <dt>Display list</dt>
+          <dd>Paint commands sent to the software renderer.</dd>
+        </dl>
+      </section>
+
+      <section id="tabular">
+        <h2>Table and Figure</h2>
+        <figure>
+          <figcaption>Weekly build summary</figcaption>
+          <table>
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Build</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Mon</td>
+                <td>143</td>
+                <td>Pass</td>
+              </tr>
+              <tr>
+                <td>Tue</td>
+                <td>144</td>
+                <td>Pass</td>
+              </tr>
+              <tr>
+                <td>Wed</td>
+                <td>145</td>
+                <td>Pass</td>
+              </tr>
+            </tbody>
+          </table>
+        </figure>
+      </section>
+
+      <section id="forms">
+        <h2>Form Controls</h2>
+        <form>
+          <fieldset>
+            <legend>Profile</legend>
+            <label for="full-name">Full name</label>
+            <input id="full-name" name="full-name" type="text" placeholder="Casey Example" />
+
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" placeholder="casey@example.com" />
+
+            <label for="tier">Tier</label>
+            <select id="tier" name="tier">
+              <option>Starter</option>
+              <option>Team</option>
+              <option>Enterprise</option>
+            </select>
+          </fieldset>
+
+          <fieldset>
+            <legend>Preferences</legend>
+            <label><input type="checkbox" checked /> Receive release notes</label>
+            <label><input type="checkbox" /> Enable alerts</label>
+            <label><input type="radio" name="theme" checked /> Light</label>
+            <label><input type="radio" name="theme" /> Dark</label>
+            <textarea rows="3" cols="40">Feedback text area sample.</textarea>
+          </fieldset>
+
+          <button type="submit">Submit</button>
+          <progress value="72" max="100">72%</progress>
+          <meter min="0" max="10" value="8">8/10</meter>
+        </form>
+      </section>
+
+      <section id="media">
+        <h2>Media and Embedded Content</h2>
+        <p>
+          These tags are included as semantic coverage items even when binary
+          media decoding is not implemented.
+        </p>
+        <img src="demo.png" alt="Preview image placeholder" />
+        <audio controls src="demo.ogg">Audio fallback text.</audio>
+        <video controls width="320" height="180">
+          <source src="demo.mp4" type="video/mp4" />
+          Video fallback text.
+        </video>
+        <canvas width="320" height="120">Canvas fallback text.</canvas>
+      </section>
+
+      <section id="inline">
+        <h2>Inline Semantics</h2>
+        <p>
+          <strong>Strong</strong>,
+          <em>emphasis</em>,
+          <mark>highlight</mark>,
+          <code>inline_code()</code>,
+          <abbr title="HyperText Markup Language">HTML</abbr>,
+          <time datetime="2026-02-22">2026-02-22</time>,
+          H<sub>2</sub>O,
+          x<sup>2</sup>.
+        </p>
+        <blockquote>
+          Good demos use realistic structure and enough text to prove rendering.
+        </blockquote>
+        <pre>
+const status = "ok";
+console.log("fixture", status);
+        </pre>
+        <details open>
+          <summary>Runtime note</summary>
+          <p>
+            Script tags are collected for deterministic host execution checks.
+          </p>
+        </details>
+      </section>
+    </main>
+
+    <footer>
+      <p>Fixture owner: Browser runtime tests.</p>
+      <small>Generated on 2026-02-22 for HTML5 demo coverage.</small>
+    </footer>
+
+    <script>
+      const tags = ["header", "section", "table", "form", "video", "details"];
+      console.log("fixture tags:", tags.join(", "));
+    </script>
+  </body>
+</html>

@@ -7,17 +7,20 @@ use ipc::{BrowserToContent, InProcessTransport};
 use platform_abi::{
     PlatformConfig, PlatformEvent, PlatformFrame, PLATFORM_ABI_VERSION, PLATFORM_EVENT_KEY_DOWN,
     PLATFORM_EVENT_QUIT, PLATFORM_EVENT_RESIZE, PLATFORM_FALSE, PLATFORM_KEY_ESCAPE,
+    PLATFORM_KEY_H, PLATFORM_KEY_SPACE,
 };
-use renderer::{DrawRect, OverlayInfo, Pattern, Renderer};
+use renderer::{DrawRect, DrawText, OverlayInfo, Pattern, Renderer};
 use script_host::{ScriptError, ScriptHost, StubScriptHost};
 use std::{
     ffi::CString,
     fs,
     mem::MaybeUninit,
     path::{Path, PathBuf},
-    thread,
-    time::{Duration, Instant},
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
 };
+use tracing::{debug, info, warn};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone)]
 enum Command {
@@ -30,7 +33,6 @@ enum Command {
 struct RunArgs {
     pattern: Pattern,
     input: Option<PathBuf>,
-    pattern_only: bool,
     width: u32,
     height: u32,
 }
@@ -41,7 +43,8 @@ struct HeadlessArgs {
     width: u32,
     height: u32,
     frame: u64,
-    out: PathBuf,
+    out_rgba: PathBuf,
+    out_meta: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,7 +61,10 @@ struct GoldenArgs {
 struct DocumentScene {
     html: String,
     rects: Vec<DrawRect>,
+    texts: Vec<DrawText>,
 }
+
+static SCRIPT_HOST_UNSUPPORTED_WARNED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     if let Err(err) = try_main() {
@@ -68,6 +74,7 @@ fn main() {
 }
 
 fn try_main() -> Result<(), String> {
+    init_tracing();
     let command = parse_cli(std::env::args().skip(1))?;
     process_split_bootstrap();
 
@@ -85,7 +92,6 @@ fn parse_cli(args: impl Iterator<Item = String>) -> Result<Command, String> {
         return Ok(Command::Run(RunArgs {
             pattern: Pattern::Gradient,
             input: default_document_input_path(),
-            pattern_only: false,
             width: 960,
             height: 540,
         }));
@@ -146,7 +152,6 @@ fn parse_run_args(args: impl Iterator<Item = String>) -> Result<Command, String>
     Ok(Command::Run(RunArgs {
         pattern,
         input,
-        pattern_only,
         width,
         height,
     }))
@@ -154,7 +159,8 @@ fn parse_run_args(args: impl Iterator<Item = String>) -> Result<Command, String>
 
 fn parse_headless_args(args: impl Iterator<Item = String>) -> Result<Command, String> {
     let mut input = None;
-    let mut out = None;
+    let mut out_rgba = None;
+    let mut out_meta = None;
     let mut width = 960_u32;
     let mut height = 540_u32;
     let mut frame = 0_u64;
@@ -165,8 +171,11 @@ fn parse_headless_args(args: impl Iterator<Item = String>) -> Result<Command, St
             "--input" => {
                 input = Some(PathBuf::from(next_arg(&mut args, "--input")?));
             }
-            "--out" => {
-                out = Some(PathBuf::from(next_arg(&mut args, "--out")?));
+            "--out" | "--out-rgba" => {
+                out_rgba = Some(PathBuf::from(next_arg(&mut args, "--out-rgba")?));
+            }
+            "--out-meta" => {
+                out_meta = Some(PathBuf::from(next_arg(&mut args, "--out-meta")?));
             }
             "--width" => {
                 width = parse_u32(&next_arg(&mut args, "--width")?, "--width")?;
@@ -182,14 +191,16 @@ fn parse_headless_args(args: impl Iterator<Item = String>) -> Result<Command, St
     }
 
     let input = input.ok_or_else(|| "headless requires --input <path>".to_string())?;
-    let out = out.ok_or_else(|| "headless requires --out <path>".to_string())?;
+    let out_rgba = out_rgba
+        .ok_or_else(|| "headless requires --out-rgba <path> (or --out <path>)".to_string())?;
 
     Ok(Command::Headless(HeadlessArgs {
         input,
         width,
         height,
         frame,
-        out,
+        out_rgba,
+        out_meta,
     }))
 }
 
@@ -271,16 +282,20 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
 
     let mut renderer = Renderer::new(width, height);
     renderer.set_pattern(args.pattern);
+    let mut overlay_enabled = true;
 
     let mut scheduler = Scheduler::new(60).with_max_updates_per_frame(4);
     let mut last_tick = Instant::now();
+    let mut simulation_time_seconds = 0.0_f32;
     let mut running = true;
 
-    log_info(&format!(
-        "starting runtime width={width} height={height} pattern={:?} document={}",
-        args.pattern,
-        document_scene.is_some()
-    ));
+    info!(
+        width,
+        height,
+        ?args.pattern,
+        has_document = document_scene.is_some(),
+        "starting runtime"
+    );
 
     while running {
         loop {
@@ -298,10 +313,16 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
                 PLATFORM_EVENT_QUIT => running = false,
                 PLATFORM_EVENT_KEY_DOWN if event.key_code == PLATFORM_KEY_ESCAPE => running = false,
                 PLATFORM_EVENT_KEY_DOWN => {
-                    if args.pattern_only {
+                    if event.key_code == PLATFORM_KEY_SPACE {
                         let next = renderer.pattern().next();
                         renderer.set_pattern(next);
-                        log_info(&format!("pattern toggled pattern={next:?}"));
+                        info!(?next, "pattern toggled");
+                    } else if event.key_code == PLATFORM_KEY_H {
+                        overlay_enabled = !overlay_enabled;
+                        info!(
+                            overlay_enabled,
+                            "help overlay toggled (Esc=quit, Space=pattern, H=overlay)"
+                        );
                     }
                 }
                 PLATFORM_EVENT_RESIZE => {
@@ -315,7 +336,7 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
                         if let Some(scene) = &mut document_scene {
                             *scene = build_document_scene(&scene.html, width, height);
                         }
-                        log_info(&format!("resized width={width} height={height}"));
+                        debug!(width, height, "resized");
                     }
                 }
                 _ => {}
@@ -330,8 +351,10 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
         let dt = now.saturating_duration_since(last_tick);
         last_tick = now;
 
-        let timing = scheduler.advance(dt);
-        let time_seconds = timing.frame_index as f32 / 60.0;
+        let timing = scheduler.advance_with_fixed_updates(dt, |step| {
+            simulation_time_seconds += step.as_secs_f32();
+        });
+        let time_seconds = simulation_time_seconds;
 
         let overlay = OverlayInfo {
             frame_index: timing.frame_index,
@@ -339,22 +362,27 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
             width,
             height,
         };
+        let overlay = overlay_enabled.then_some(overlay);
 
         let framebuffer = if let Some(scene) = &document_scene {
             renderer.render_display_list(
                 timing.frame_index,
                 time_seconds,
                 &scene.rects,
-                Some(overlay),
+                &scene.texts,
+                overlay,
             )
         } else {
-            renderer.render_pattern(timing.frame_index, time_seconds, Some(overlay))
+            renderer.render_pattern(timing.frame_index, time_seconds, overlay)
         };
 
-        log_debug(&format!(
-            "frame timing frame={} dt={:.4} fps={:.2} fixed_updates={}",
-            timing.frame_index, timing.dt_seconds, timing.fps, timing.fixed_updates
-        ));
+        debug!(
+            frame = timing.frame_index,
+            dt_seconds = timing.dt_seconds,
+            fps = timing.fps,
+            fixed_updates = timing.fixed_updates,
+            "frame timing"
+        );
 
         let frame = PlatformFrame {
             struct_size: std::mem::size_of::<PlatformFrame>() as u32,
@@ -368,8 +396,6 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
         if presented == PLATFORM_FALSE {
             running = false;
         }
-
-        thread::sleep(Duration::from_millis(1));
     }
 
     unsafe { ffi::platform_shutdown() };
@@ -382,21 +408,26 @@ fn run_headless(args: HeadlessArgs) -> Result<(), String> {
 
     let buffer = render_headless_buffer(&html, args.width, args.height, args.frame);
 
-    if let Some(parent) = args.out.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    write_file_with_parents(&args.out_rgba, &buffer)?;
+
+    if let Some(out_meta) = &args.out_meta {
+        let metadata = format!(
+            "{{\n  \"format\": \"rgba8\",\n  \"width\": {},\n  \"height\": {},\n  \"stride_bytes\": {},\n  \"frame\": {}\n}}\n",
+            args.width,
+            args.height,
+            args.width.saturating_mul(4),
+            args.frame
+        );
+        write_file_with_parents(out_meta, metadata.as_bytes())?;
     }
 
-    fs::write(&args.out, &buffer)
-        .map_err(|err| format!("failed to write {}: {err}", args.out.display()))?;
-
-    log_info(&format!(
-        "headless frame written path={} width={} height={} bytes={}",
-        args.out.display(),
-        args.width,
-        args.height,
-        buffer.len()
-    ));
+    info!(
+        path = %args.out_rgba.display(),
+        width = args.width,
+        height = args.height,
+        bytes = buffer.len(),
+        "headless frame written"
+    );
     Ok(())
 }
 
@@ -433,10 +464,7 @@ fn run_golden(args: GoldenArgs) -> Result<(), String> {
                     expected_path.display()
                 )
             })?;
-            log_info(&format!(
-                "golden updated path={} hash={hash}",
-                expected_path.display()
-            ));
+            info!(path = %expected_path.display(), hash, "golden updated");
             continue;
         }
 
@@ -462,10 +490,10 @@ fn run_golden(args: GoldenArgs) -> Result<(), String> {
     }
 
     if failures.is_empty() {
-        log_info(&format!(
-            "golden check passed count={}",
-            fixtures_len(&args.fixture_dir)?
-        ));
+        info!(
+            count = fixtures_len(&args.fixture_dir)?,
+            "golden check passed"
+        );
         return Ok(());
     }
 
@@ -509,7 +537,13 @@ fn render_headless_buffer(html: &str, width: u32, height: u32, frame: u64) -> Ve
     };
 
     renderer
-        .render_display_list(frame, frame as f32 / 60.0, &scene.rects, Some(overlay))
+        .render_display_list(
+            frame,
+            frame as f32 / 60.0,
+            &scene.rects,
+            &scene.texts,
+            Some(overlay),
+        )
         .to_vec()
 }
 
@@ -520,39 +554,55 @@ fn build_document_scene(html: &str, width: u32, height: u32) -> DocumentScene {
     if let Err(err) = host.execute(&output.scripts) {
         match err {
             ScriptError::Unsupported { script_count } => {
-                log_warn(&format!(
-                    "script execution unsupported in stub host script_count={script_count}"
-                ));
+                if !SCRIPT_HOST_UNSUPPORTED_WARNED.swap(true, Ordering::Relaxed) {
+                    warn!(script_count, "script execution unsupported in stub host");
+                } else {
+                    debug!(script_count, "script execution unsupported in stub host");
+                }
             }
         }
     }
 
-    let rects = display_commands_to_rects(&output.display_list.commands);
+    let (rects, texts) = display_commands_to_scene(&output.display_list.commands);
     DocumentScene {
         html: html.to_string(),
         rects,
+        texts,
     }
 }
 
-fn display_commands_to_rects(commands: &[DisplayCommand]) -> Vec<DrawRect> {
-    commands
-        .iter()
-        .map(|cmd| match cmd {
+fn display_commands_to_scene(commands: &[DisplayCommand]) -> (Vec<DrawRect>, Vec<DrawText>) {
+    let mut rects = Vec::new();
+    let mut texts = Vec::new();
+    for cmd in commands {
+        match cmd {
             DisplayCommand::FillRect {
                 x,
                 y,
                 width,
                 height,
                 color,
-            } => DrawRect {
-                x: *x as i32,
-                y: *y as i32,
-                width: *width as i32,
-                height: *height as i32,
-                color: *color,
-            },
-        })
-        .collect()
+            } => {
+                rects.push(DrawRect {
+                    x: *x as i32,
+                    y: *y as i32,
+                    width: *width as i32,
+                    height: *height as i32,
+                    color: *color,
+                });
+            }
+            DisplayCommand::DrawText { x, y, text, color } => {
+                texts.push(DrawText {
+                    x: *x as i32,
+                    y: *y as i32,
+                    text: text.clone(),
+                    color: *color,
+                    scale: 2,
+                });
+            }
+        }
+    }
+    (rects, texts)
 }
 
 fn parse_u32(value: &str, flag: &str) -> Result<u32, String> {
@@ -575,6 +625,14 @@ fn next_arg(
         .ok_or_else(|| format!("missing value for {flag}"))
 }
 
+fn write_file_with_parents(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, bytes).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
 fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf29ce484222325_u64;
     for b in bytes {
@@ -585,7 +643,7 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 fn default_document_input_path() -> Option<PathBuf> {
-    let path = PathBuf::from("tests/fixtures/basic.html");
+    let path = PathBuf::from("tests/fixtures/detailed.html");
     if path.exists() {
         Some(path)
     } else {
@@ -593,18 +651,13 @@ fn default_document_input_path() -> Option<PathBuf> {
     }
 }
 
-fn log_info(message: &str) {
-    eprintln!("[browser][info] {message}");
-}
-
-fn log_warn(message: &str) {
-    eprintln!("[browser][warn] {message}");
-}
-
-fn log_debug(message: &str) {
-    if std::env::var_os("BROWSER_DEBUG").is_some() {
-        eprintln!("[browser][debug] {message}");
-    }
+fn init_tracing() {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("browser=info"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .without_time()
+        .init();
 }
 
 #[cfg(feature = "process-split")]
@@ -612,7 +665,7 @@ fn process_split_bootstrap() {
     let mut transport = InProcessTransport::default();
     transport.send_to_content(&BrowserToContent::Tick { frame_index: 0 });
     let _ = transport.recv_for_content();
-    log_debug("process-split feature enabled (ipc transport bootstrap)");
+    debug!("process-split feature enabled (ipc transport bootstrap)");
 }
 
 #[cfg(not(feature = "process-split"))]
@@ -652,7 +705,7 @@ mod tests {
                 "headless",
                 "--input",
                 "tests/fixtures/basic.html",
-                "--out",
+                "--out-rgba",
                 "tests/golden/tmp.rgba",
             ]
             .into_iter()
@@ -665,6 +718,35 @@ mod tests {
         };
         assert_eq!(headless.width, 960);
         assert_eq!(headless.height, 540);
+        assert_eq!(headless.out_rgba, PathBuf::from("tests/golden/tmp.rgba"));
+        assert_eq!(headless.out_meta, None);
+    }
+
+    #[test]
+    fn parses_headless_out_alias_and_meta() {
+        let command = parse_cli(
+            vec![
+                "headless",
+                "--input",
+                "tests/fixtures/basic.html",
+                "--out",
+                "tests/golden/tmp.rgba",
+                "--out-meta",
+                "tests/golden/tmp.json",
+            ]
+            .into_iter()
+            .map(String::from),
+        )
+        .unwrap();
+
+        let Command::Headless(headless) = command else {
+            panic!("expected headless command");
+        };
+        assert_eq!(headless.out_rgba, PathBuf::from("tests/golden/tmp.rgba"));
+        assert_eq!(
+            headless.out_meta,
+            Some(PathBuf::from("tests/golden/tmp.json"))
+        );
     }
 
     #[test]
@@ -677,8 +759,9 @@ mod tests {
             color: [1, 2, 3, 4],
         }];
 
-        let rects = display_commands_to_rects(&commands);
+        let (rects, texts) = display_commands_to_scene(&commands);
         assert_eq!(rects.len(), 1);
+        assert_eq!(texts.len(), 0);
         assert_eq!(rects[0].x, 1);
         assert_eq!(rects[0].height, 4);
     }

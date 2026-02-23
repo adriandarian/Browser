@@ -1,4 +1,4 @@
-use std::{env, io::ErrorKind, path::PathBuf, process::Command};
+use std::{env, fs, io::ErrorKind, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(platform_stub)");
@@ -64,12 +64,29 @@ fn main() {
     };
 
     let mut zig = Command::new("zig");
+    let zig_local_cache = repo_root.join("zig/platform/.zig-cache");
+    let zig_global_cache = repo_root.join("zig/.zig-global-cache");
+    if let Err(err) = fs::create_dir_all(&zig_local_cache) {
+        println!(
+            "cargo:warning=failed to create Zig local cache dir {}: {err}",
+            zig_local_cache.display()
+        );
+    }
+    if let Err(err) = fs::create_dir_all(&zig_global_cache) {
+        println!(
+            "cargo:warning=failed to create Zig global cache dir {}: {err}",
+            zig_global_cache.display()
+        );
+    }
+
     zig.current_dir(&zig_dir)
         .arg("build")
         .arg(format!("-Doptimize={optimize}"))
         .arg(format!("-Dtarget={zig_target}"))
         .arg("--prefix")
-        .arg(&out_dir);
+        .arg(&out_dir)
+        .env("ZIG_LOCAL_CACHE_DIR", &zig_local_cache)
+        .env("ZIG_GLOBAL_CACHE_DIR", &zig_global_cache);
 
     if target.contains("apple-darwin") {
         if let Ok(output) = Command::new("xcrun")

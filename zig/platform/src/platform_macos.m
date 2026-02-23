@@ -254,14 +254,30 @@ uint8_t platform_poll_event(platform_event *out_event) {
                                           inMode:NSDefaultRunLoopMode
                                          dequeue:YES])) {
       if ([event type] == NSEventTypeKeyDown) {
+        uint32_t key_code = PLATFORM_KEY_UNKNOWN;
         if ([event keyCode] == 53) {
-          platform_event next;
-          memset(&next, 0, sizeof(next));
-          next.struct_size = sizeof(platform_event);
-          next.kind = PLATFORM_EVENT_KEY_DOWN;
-          next.key_code = PLATFORM_KEY_ESCAPE;
-          push_event(&next);
+          key_code = PLATFORM_KEY_ESCAPE;
+        } else {
+          NSString *chars = [event charactersIgnoringModifiers];
+          if ([chars length] > 0) {
+            unichar ch = [chars characterAtIndex:0];
+            if (ch >= 'a' && ch <= 'z') {
+              ch = (unichar)(ch - ('a' - 'A'));
+            }
+            if (ch == ' ') {
+              key_code = PLATFORM_KEY_SPACE;
+            } else if (ch == 'H') {
+              key_code = PLATFORM_KEY_H;
+            }
+          }
         }
+
+        platform_event next;
+        memset(&next, 0, sizeof(next));
+        next.struct_size = sizeof(platform_event);
+        next.kind = PLATFORM_EVENT_KEY_DOWN;
+        next.key_code = key_code;
+        push_event(&next);
       } else {
         [NSApp sendEvent:event];
       }

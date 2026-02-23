@@ -26,3 +26,9 @@ zig-out/
 
 # Python cache
 __pycache__/
+
+# Golden test runtime artifacts
+tests/golden/actual/*
+!tests/golden/actual/.gitkeep
+tests/golden/diff/*
+!tests/golden/diff/.gitkeep

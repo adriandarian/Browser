@@ -33,6 +33,15 @@ pub struct DrawRect {
     pub color: [u8; 4],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrawText {
+    pub x: i32,
+    pub y: i32,
+    pub text: String,
+    pub color: [u8; 4],
+    pub scale: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OverlayInfo {
     pub frame_index: u64,
@@ -113,6 +122,7 @@ impl Renderer {
         frame_index: u64,
         time_seconds: f32,
         rects: &[DrawRect],
+        texts: &[DrawText],
         overlay: Option<OverlayInfo>,
     ) -> &[u8] {
         let bg_pulse = pulse_u8(frame_index, time_seconds) >> 4;
@@ -134,6 +144,19 @@ impl Renderer {
                 rect.width,
                 rect.height,
                 rect.color,
+            );
+        }
+
+        for text in texts {
+            draw_text_scaled(
+                &mut self.pixels,
+                self.width,
+                self.height,
+                text.x,
+                text.y,
+                &text.text,
+                text.color,
+                text.scale.max(1),
             );
         }
 
@@ -288,18 +311,32 @@ fn draw_text(
     framebuffer: &mut [u8],
     width: u32,
     height: u32,
-    mut x: i32,
+    x: i32,
     y: i32,
     text: &str,
     color: [u8; 4],
 ) {
+    draw_text_scaled(framebuffer, width, height, x, y, text, color, 1);
+}
+
+fn draw_text_scaled(
+    framebuffer: &mut [u8],
+    width: u32,
+    height: u32,
+    mut x: i32,
+    y: i32,
+    text: &str,
+    color: [u8; 4],
+    scale: u32,
+) {
+    let advance = (4 * scale as i32).max(1);
     for ch in text.chars() {
-        draw_char(framebuffer, width, height, x, y, ch, color);
-        x += 4;
+        draw_char_scaled(framebuffer, width, height, x, y, ch, color, scale);
+        x += advance;
     }
 }
 
-fn draw_char(
+fn draw_char_scaled(
     framebuffer: &mut [u8],
     width: u32,
     height: u32,
@@ -307,8 +344,10 @@ fn draw_char(
     y: i32,
     ch: char,
     color: [u8; 4],
+    scale: u32,
 ) {
     let rows = glyph_rows(ch.to_ascii_uppercase());
+    let pixel = scale.max(1) as i32;
 
     for (row_index, row_bits) in rows.iter().enumerate() {
         for col in 0..3 {
@@ -321,10 +360,10 @@ fn draw_char(
                 framebuffer,
                 width,
                 height,
-                x + col,
-                y + row_index as i32,
-                1,
-                1,
+                x + (col * pixel),
+                y + (row_index as i32 * pixel),
+                pixel,
+                pixel,
                 color,
             );
         }
@@ -333,6 +372,11 @@ fn draw_char(
 
 fn glyph_rows(ch: char) -> [u8; 5] {
     match ch {
+        'A' => [0b111, 0b101, 0b111, 0b101, 0b101],
+        'B' => [0b110, 0b101, 0b110, 0b101, 0b110],
+        'C' => [0b111, 0b100, 0b100, 0b100, 0b111],
+        'D' => [0b110, 0b101, 0b101, 0b101, 0b110],
+        'E' => [0b111, 0b100, 0b110, 0b100, 0b111],
         '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
         '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
         '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
@@ -344,9 +388,44 @@ fn glyph_rows(ch: char) -> [u8; 5] {
         '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
         '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
         'F' => [0b111, 0b100, 0b110, 0b100, 0b100],
+        'G' => [0b111, 0b100, 0b101, 0b101, 0b111],
         'H' => [0b101, 0b101, 0b111, 0b101, 0b101],
+        'I' => [0b111, 0b010, 0b010, 0b010, 0b111],
+        'J' => [0b001, 0b001, 0b001, 0b101, 0b111],
+        'K' => [0b101, 0b101, 0b110, 0b101, 0b101],
+        'L' => [0b100, 0b100, 0b100, 0b100, 0b111],
+        'M' => [0b101, 0b111, 0b111, 0b101, 0b101],
+        'N' => [0b101, 0b111, 0b111, 0b111, 0b101],
+        'O' => [0b111, 0b101, 0b101, 0b101, 0b111],
         'P' => [0b110, 0b101, 0b110, 0b100, 0b100],
+        'Q' => [0b111, 0b101, 0b101, 0b111, 0b001],
+        'R' => [0b110, 0b101, 0b110, 0b101, 0b101],
+        'S' => [0b111, 0b100, 0b111, 0b001, 0b111],
+        'T' => [0b111, 0b010, 0b010, 0b010, 0b010],
+        'U' => [0b101, 0b101, 0b101, 0b101, 0b111],
+        'V' => [0b101, 0b101, 0b101, 0b101, 0b010],
         'W' => [0b101, 0b101, 0b101, 0b111, 0b101],
+        'X' => [0b101, 0b101, 0b010, 0b101, 0b101],
+        'Y' => [0b101, 0b101, 0b010, 0b010, 0b010],
+        'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
+        ':' => [0b000, 0b010, 0b000, 0b010, 0b000],
+        ';' => [0b000, 0b010, 0b000, 0b010, 0b100],
+        ',' => [0b000, 0b000, 0b000, 0b010, 0b100],
+        '!' => [0b010, 0b010, 0b010, 0b000, 0b010],
+        '?' => [0b111, 0b001, 0b011, 0b000, 0b010],
+        '<' => [0b001, 0b010, 0b100, 0b010, 0b001],
+        '>' => [0b100, 0b010, 0b001, 0b010, 0b100],
+        '[' => [0b110, 0b100, 0b100, 0b100, 0b110],
+        ']' => [0b011, 0b001, 0b001, 0b001, 0b011],
+        '/' => [0b001, 0b001, 0b010, 0b100, 0b100],
+        '=' => [0b000, 0b111, 0b000, 0b111, 0b000],
+        '_' => [0b000, 0b000, 0b000, 0b000, 0b111],
+        '\'' => [0b010, 0b010, 0b000, 0b000, 0b000],
+        '"' => [0b101, 0b101, 0b000, 0b000, 0b000],
+        '(' => [0b010, 0b100, 0b100, 0b100, 0b010],
+        ')' => [0b010, 0b001, 0b001, 0b001, 0b010],
+        '+' => [0b000, 0b010, 0b111, 0b010, 0b000],
+        '&' => [0b110, 0b101, 0b010, 0b101, 0b110],
         '.' => [0b000, 0b000, 0b000, 0b000, 0b010],
         '-' => [0b000, 0b000, 0b111, 0b000, 0b000],
         ' ' => [0b000, 0b000, 0b000, 0b000, 0b000],
@@ -444,7 +523,7 @@ mod tests {
             color: [255, 10, 10, 255],
         }];
 
-        let frame = renderer.render_display_list(0, 0.0, &rects, None);
+        let frame = renderer.render_display_list(0, 0.0, &rects, &[], None);
         let stride = 32 * 4;
         let idx = (2 * stride) + (2 * 4);
         assert_eq!(&frame[idx..idx + 4], &[255, 10, 10, 255]);

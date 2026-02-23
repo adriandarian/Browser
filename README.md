@@ -23,9 +23,9 @@ Foundational scaffolding for a desktop runtime that keeps strict boundaries:
 │   └── platform.h       # ABI contract (source of truth)
 ├── tests/
 │   ├── fixtures/        # Local HTML fixtures used by headless/golden checks
-│   └── golden/          # Golden frame hashes
+│   └── golden/          # Golden expected/actual/diff artifacts
 ├── tools/py/
-│   ├── run.py           # Build/run/test helper (run, test, golden)
+│   ├── run.py           # Build/run/test helper (run, test)
 │   └── ipc_codegen.py   # IPC schema doc generator
 ├── zig/platform/        # Zig-built platform library
 ├── Cargo.toml           # Cargo workspace root
@@ -47,10 +47,6 @@ Foundational scaffolding for a desktop runtime that keeps strict boundaries:
 just build
 just run
 ```
-
-`tools/py/run.py` auto-selects:
-- `aarch64-apple-darwin` on Apple Silicon
-- `x86_64-apple-darwin` on Intel Macs
 
 macOS platform backend notes:
 - Cocoa window + event pump lives in `/Users/dariana/personal/Browser/zig/platform/src/platform_macos.m`.
@@ -82,7 +78,7 @@ Windows platform backend notes:
 just build   # cargo build --workspace
 just run     # python3 tools/py/run.py run
 just test    # python3 tools/py/run.py test
-just golden --update  # refresh golden hashes
+just golden  # refresh goldens (equivalent to `just test --update`)
 just fmt     # cargo fmt --all
 ```
 
@@ -92,15 +88,9 @@ just fmt     # cargo fmt --all
 # Windowed runtime
 cargo run -p browser -- run --pattern gradient
 
-# Force test-pattern mode (skip default fixture render)
-cargo run -p browser -- run --pattern-only --pattern gradient
-
-# Headless RGBA export
-cargo run -p browser -- headless --input tests/fixtures/basic.html --out /tmp/frame.rgba
-
-# Golden checks
-cargo run -p browser -- golden
-cargo run -p browser -- golden --update
+# Headless RGBA + metadata export
+cargo run -p browser -- headless --input tests/fixtures/basic.html \
+  --out-rgba /tmp/frame.rgba --out-meta /tmp/frame.json
 ```
 
 ## ABI design notes

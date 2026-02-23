@@ -1,5 +1,5 @@
 0
-7154 260053665 1771719836220819056 fe53a5505b56e3522e1dc5b21107c9f8 0 /Users/dariana/personal/Browser/zig/platform/src/platform_macos.m
+9272 260053665 1771747516245715433 9469edc68593f4758e8bfd0f3c8fb44b 0 /Users/dariana/personal/Browser/zig/platform/src/platform_macos.m
 985956 219904560 1763617417000000000 255fa807920c510365944316de14d971 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/AppKit.framework/AppKit.tbd
 381402 219897117 1763100850000000000 e454557ef9a5cd6f097e679d263f5b46 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics.tbd
 5595577 219908247 1762658762000000000 7660b5b8bb7b68dfad6bd1babdebd8fa 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/Foundation.framework/Foundation.tbd
@@ -1264,4 +1264,4 @@
 3098 219904752 1763617443000000000 a210e202be2ee547a42a6aaf8f1666c2 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSWritingToolsCoordinatorAnimationParameters.h
 8098 219904835 1763617441000000000 f601ae31b3c85bff453166130ffac5ae 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSWritingToolsCoordinatorContext.h
 71189 219904827 1763617442000000000 9389bcbf6755ed6614aa676bd4319923 0 /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSWritingToolsCoordinator.h
-2004 259618292 1771562839660115377 1e5ef90e3cb2ddaa8a7e7dfd9eb94ee2 0 /Users/dariana/personal/Browser/include/platform.h
+2416 259618292 1771747505579278918 61ee0a1b580a88e8579257b2b07abd9f 0 /Users/dariana/personal/Browser/include/platform.h

@@ -13,6 +13,8 @@ pub const PLATFORM_EVENT_RESIZE: u32 = 4;
 
 pub const PLATFORM_KEY_UNKNOWN: u32 = 0;
 pub const PLATFORM_KEY_ESCAPE: u32 = 27;
+pub const PLATFORM_KEY_SPACE: u32 = 32;
+pub const PLATFORM_KEY_H: u32 = 72;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,7 +73,7 @@ impl Default for PlatformFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::mem::{MaybeUninit, align_of, size_of};
+    use core::mem::{align_of, size_of, MaybeUninit};
 
     fn offset_of_config_width() -> usize {
         let uninit = MaybeUninit::<PlatformConfig>::uninit();

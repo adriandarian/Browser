@@ -42,12 +42,20 @@ impl Scheduler {
         self.fixed_step
     }
 
-    pub fn advance(&mut self, dt: Duration) -> FrameTiming {
+    pub fn advance_with_fixed_updates<F>(
+        &mut self,
+        dt: Duration,
+        mut fixed_update: F,
+    ) -> FrameTiming
+    where
+        F: FnMut(Duration),
+    {
         self.accumulator = self.accumulator.saturating_add(dt);
 
         let mut updates = 0;
         while self.accumulator >= self.fixed_step && updates < self.max_updates_per_frame {
             self.accumulator -= self.fixed_step;
+            fixed_update(self.fixed_step);
             updates += 1;
         }
 
@@ -70,6 +78,10 @@ impl Scheduler {
             fps: self.fps,
             fixed_updates: updates,
         }
+    }
+
+    pub fn advance(&mut self, dt: Duration) -> FrameTiming {
+        self.advance_with_fixed_updates(dt, |_| {})
     }
 }
 
@@ -102,5 +114,15 @@ mod tests {
         }
 
         assert!(last.fps > 0.0);
+    }
+
+    #[test]
+    fn runs_fixed_update_callback() {
+        let mut scheduler = Scheduler::new(60);
+        let mut callbacks = 0_u32;
+        let timing =
+            scheduler.advance_with_fixed_updates(Duration::from_millis(34), |_| callbacks += 1);
+        assert_eq!(timing.fixed_updates, callbacks);
+        assert_eq!(callbacks, 2);
     }
 }

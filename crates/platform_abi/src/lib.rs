@@ -13,8 +13,13 @@ pub const PLATFORM_EVENT_RESIZE: u32 = 4;
 
 pub const PLATFORM_KEY_UNKNOWN: u32 = 0;
 pub const PLATFORM_KEY_ESCAPE: u32 = 27;
+pub const PLATFORM_KEY_ENTER: u32 = 13;
 pub const PLATFORM_KEY_SPACE: u32 = 32;
+pub const PLATFORM_KEY_F: u32 = 70;
 pub const PLATFORM_KEY_H: u32 = 72;
+pub const PLATFORM_KEY_J: u32 = 74;
+pub const PLATFORM_KEY_K: u32 = 75;
+pub const PLATFORM_KEY_S: u32 = 83;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,3 +1,13 @@
+use fontdue::{
+    layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle},
+    Font, FontSettings,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::{Path, PathBuf},
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pattern {
     Gradient,
@@ -55,16 +65,31 @@ pub struct Renderer {
     height: u32,
     pixels: Vec<u8>,
     pattern: Pattern,
+    fonts: Vec<FontChoice>,
+    font_index: usize,
+    loaded_fonts: HashMap<usize, Font>,
+}
+
+#[derive(Debug, Clone)]
+struct FontChoice {
+    name: String,
+    path: Option<PathBuf>,
 }
 
 impl Renderer {
     pub fn new(width: u32, height: u32) -> Self {
+        let fonts = discover_fonts();
+        let font_index = default_font_index(&fonts);
         let mut renderer = Self {
             width: 0,
             height: 0,
             pixels: Vec::new(),
             pattern: Pattern::Gradient,
+            fonts,
+            font_index,
+            loaded_fonts: HashMap::new(),
         };
+        renderer.ensure_font_loaded(renderer.font_index);
         renderer.resize(width, height);
         renderer
     }
@@ -147,17 +172,46 @@ impl Renderer {
             );
         }
 
+        let use_system_font = self.ensure_font_loaded(self.font_index);
         for text in texts {
-            draw_text_scaled(
-                &mut self.pixels,
-                self.width,
-                self.height,
-                text.x,
-                text.y,
-                &text.text,
-                text.color,
-                text.scale.max(1),
-            );
+            if use_system_font {
+                if let Some(font) = self.loaded_fonts.get(&self.font_index) {
+                    let px = text_px(text.scale);
+                    draw_text_fontdue(
+                        &mut self.pixels,
+                        self.width,
+                        self.height,
+                        text.x,
+                        text.y,
+                        &text.text,
+                        text.color,
+                        font,
+                        px,
+                    );
+                } else {
+                    draw_text_scaled(
+                        &mut self.pixels,
+                        self.width,
+                        self.height,
+                        text.x,
+                        text.y,
+                        &text.text,
+                        text.color,
+                        text.scale.max(1),
+                    );
+                }
+            } else {
+                draw_text_scaled(
+                    &mut self.pixels,
+                    self.width,
+                    self.height,
+                    text.x,
+                    text.y,
+                    &text.text,
+                    text.color,
+                    text.scale.max(1),
+                );
+            }
         }
 
         if let Some(overlay) = overlay {
@@ -174,12 +228,251 @@ impl Renderer {
     pub fn height(&self) -> u32 {
         self.height
     }
+
+    pub fn cycle_font(&mut self) -> String {
+        if self.fonts.is_empty() {
+            return "Pixel 5x7".to_string();
+        }
+
+        let start = self.font_index;
+        loop {
+            self.font_index = (self.font_index + 1) % self.fonts.len();
+            if self.font_is_ready(self.font_index) || self.font_index == start {
+                break;
+            }
+        }
+        self.current_font_name().to_string()
+    }
+
+    pub fn current_font_name(&self) -> &str {
+        self.fonts
+            .get(self.font_index)
+            .map(|entry| entry.name.as_str())
+            .unwrap_or("Pixel 5x7")
+    }
+
+    pub fn current_font_index(&self) -> usize {
+        self.font_index
+    }
+
+    pub fn font_name(&self, index: usize) -> Option<&str> {
+        self.fonts.get(index).map(|f| f.name.as_str())
+    }
+
+    pub fn font_count(&self) -> usize {
+        self.fonts.len()
+    }
+
+    pub fn set_font_index(&mut self, index: usize) -> bool {
+        if index >= self.fonts.len() {
+            return false;
+        }
+        if !self.font_is_ready(index) {
+            return false;
+        }
+        self.font_index = index;
+        true
+    }
+
+    fn font_is_ready(&mut self, index: usize) -> bool {
+        match self.fonts.get(index) {
+            Some(FontChoice { path: None, .. }) => true,
+            Some(FontChoice { path: Some(_), .. }) => self.ensure_font_loaded(index),
+            None => false,
+        }
+    }
+
+    fn ensure_font_loaded(&mut self, index: usize) -> bool {
+        if self.loaded_fonts.contains_key(&index) {
+            return true;
+        }
+        let Some(choice) = self.fonts.get(index) else {
+            return false;
+        };
+        let Some(path) = &choice.path else {
+            return false;
+        };
+
+        let Ok(bytes) = fs::read(path) else {
+            return false;
+        };
+        let Ok(font) = Font::from_bytes(bytes, FontSettings::default()) else {
+            return false;
+        };
+        self.loaded_fonts.insert(index, font);
+        true
+    }
 }
 
 fn pixel_len(width: u32, height: u32) -> usize {
     (width as usize)
         .saturating_mul(height as usize)
         .saturating_mul(4)
+}
+
+fn text_px(scale: u32) -> f32 {
+    12.0 + (scale.max(1) as f32 * 2.0)
+}
+
+fn discover_fonts() -> Vec<FontChoice> {
+    let mut fonts = Vec::new();
+    fonts.push(FontChoice {
+        name: "Pixel 5x7".to_string(),
+        path: None,
+    });
+
+    let mut roots = Vec::new();
+    #[cfg(target_os = "macos")]
+    {
+        roots.push(PathBuf::from("/System/Library/Fonts"));
+        roots.push(PathBuf::from("/Library/Fonts"));
+        if let Ok(home) = env::var("HOME") {
+            roots.push(PathBuf::from(home).join("Library/Fonts"));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        roots.push(PathBuf::from("C:/Windows/Fonts"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        roots.push(PathBuf::from("/usr/share/fonts"));
+        roots.push(PathBuf::from("/usr/local/share/fonts"));
+        if let Ok(home) = env::var("HOME") {
+            roots.push(PathBuf::from(home).join(".fonts"));
+            roots.push(PathBuf::from(home).join(".local/share/fonts"));
+        }
+    }
+
+    let files = collect_font_files(&roots);
+    let mut used_paths = HashSet::new();
+
+    // Curated families first so the popup defaults to sane UI/text fonts.
+    let preferred = [
+        "SFNS",
+        "SF Pro",
+        "Helvetica",
+        "Arial",
+        "Avenir",
+        "Inter",
+        "Menlo",
+        "Monaco",
+        "Times",
+        "Georgia",
+        "Verdana",
+        "Trebuchet",
+        "Courier",
+    ];
+    for family in preferred {
+        if let Some(path) = find_font_by_name(&files, family) {
+            if used_paths.insert(path.clone()) {
+                fonts.push(FontChoice {
+                    name: font_display_name(&path),
+                    path: Some(path),
+                });
+            }
+        }
+    }
+
+    // Then add a filtered subset of remaining readable text fonts.
+    for path in files {
+        if used_paths.contains(&path) || !is_readable_text_font(&path) {
+            continue;
+        }
+        used_paths.insert(path.clone());
+        fonts.push(FontChoice {
+            name: font_display_name(&path),
+            path: Some(path),
+        });
+        if fonts.len() >= 80 {
+            break;
+        }
+    }
+
+    fonts
+}
+
+fn default_font_index(fonts: &[FontChoice]) -> usize {
+    if fonts.len() <= 1 {
+        return 0;
+    }
+
+    let preferred = ["sf", "helvetica", "arial", "georgia", "times", "menlo"];
+    for (index, entry) in fonts.iter().enumerate().skip(1) {
+        let lowered = entry.name.to_ascii_lowercase();
+        if preferred.iter().any(|needle| lowered.contains(needle)) {
+            return index;
+        }
+    }
+    1
+}
+
+fn collect_font_files(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack: Vec<PathBuf> = roots.to_vec();
+
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if is_font_path(&path) && is_readable_text_font(&path) {
+                out.push(path);
+            }
+        }
+    }
+
+    out.sort();
+    out
+}
+
+fn is_font_path(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|ext| ext.to_str()),
+        Some("ttf") | Some("otf") | Some("TTF") | Some("OTF")
+    )
+}
+
+fn font_display_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(|name| name.replace(['_', '-'], " "))
+        .unwrap_or_else(|| "Unknown Font".to_string())
+}
+
+fn find_font_by_name(files: &[PathBuf], token: &str) -> Option<PathBuf> {
+    let token = token.to_ascii_lowercase();
+    files.iter().find_map(|path| {
+        let name = font_display_name(path).to_ascii_lowercase();
+        if name.contains(&token) {
+            Some(path.clone())
+        } else {
+            None
+        }
+    })
+}
+
+fn is_readable_text_font(path: &Path) -> bool {
+    let name = font_display_name(path).to_ascii_lowercase();
+    let excluded = [
+        "emoji",
+        "symbol",
+        "dingbat",
+        "wingdings",
+        "webdings",
+        "ornament",
+        "lastresort",
+        "math",
+        "music",
+        "icons",
+        "materialicons",
+    ];
+    !excluded.iter().any(|term| name.contains(term))
 }
 
 fn pulse_u8(frame_index: u64, time_seconds: f32) -> u8 {
@@ -319,6 +612,90 @@ fn draw_text(
     draw_text_scaled(framebuffer, width, height, x, y, text, color, 1);
 }
 
+fn draw_text_fontdue(
+    framebuffer: &mut [u8],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    text: &str,
+    color: [u8; 4],
+    font: &Font,
+    px: f32,
+) {
+    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    layout.reset(&LayoutSettings::default());
+    layout.append(&[font], &TextStyle::new(text, px, 0));
+
+    for glyph in layout.glyphs() {
+        let (metrics, bitmap) = font.rasterize_config(glyph.key);
+        if metrics.width == 0 || metrics.height == 0 {
+            continue;
+        }
+        draw_alpha_bitmap(
+            framebuffer,
+            width,
+            height,
+            x + glyph.x.floor() as i32,
+            y + glyph.y.floor() as i32,
+            metrics.width,
+            metrics.height,
+            &bitmap,
+            color,
+        );
+    }
+}
+
+fn draw_alpha_bitmap(
+    framebuffer: &mut [u8],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    bmp_w: usize,
+    bmp_h: usize,
+    bitmap: &[u8],
+    color: [u8; 4],
+) {
+    let stride = width as usize * 4;
+    for row in 0..bmp_h {
+        let py = y + row as i32;
+        if py < 0 || py >= height as i32 {
+            continue;
+        }
+        for col in 0..bmp_w {
+            let px = x + col as i32;
+            if px < 0 || px >= width as i32 {
+                continue;
+            }
+
+            let src_row = bmp_h - 1 - row;
+            let coverage = bitmap[src_row * bmp_w + col];
+            if coverage == 0 {
+                continue;
+            }
+
+            let index = py as usize * stride + px as usize * 4;
+            blend_pixel(&mut framebuffer[index..index + 4], color, coverage);
+        }
+    }
+}
+
+fn blend_pixel(dst: &mut [u8], src: [u8; 4], coverage: u8) {
+    let alpha = ((src[3] as u16 * coverage as u16) / 255) as u8;
+    if alpha == 0 {
+        return;
+    }
+
+    let inv_alpha = 255_u16.saturating_sub(alpha as u16);
+    for channel in 0..3 {
+        let d = dst[channel] as u16;
+        let s = src[channel] as u16;
+        dst[channel] = ((d * inv_alpha + s * alpha as u16) / 255) as u8;
+    }
+    dst[3] = 255;
+}
+
 fn draw_text_scaled(
     framebuffer: &mut [u8],
     width: u32,
@@ -329,7 +706,7 @@ fn draw_text_scaled(
     color: [u8; 4],
     scale: u32,
 ) {
-    let advance = (4 * scale as i32).max(1);
+    let advance = (6 * scale as i32).max(1);
     for ch in text.chars() {
         draw_char_scaled(framebuffer, width, height, x, y, ch, color, scale);
         x += advance;
@@ -350,8 +727,8 @@ fn draw_char_scaled(
     let pixel = scale.max(1) as i32;
 
     for (row_index, row_bits) in rows.iter().enumerate() {
-        for col in 0..3 {
-            let bit = 1 << (2 - col);
+        for col in 0..5 {
+            let bit = 1 << (4 - col);
             if row_bits & bit == 0 {
                 continue;
             }
@@ -370,66 +747,66 @@ fn draw_char_scaled(
     }
 }
 
-fn glyph_rows(ch: char) -> [u8; 5] {
+fn glyph_rows(ch: char) -> [u8; 7] {
     match ch {
-        'A' => [0b111, 0b101, 0b111, 0b101, 0b101],
-        'B' => [0b110, 0b101, 0b110, 0b101, 0b110],
-        'C' => [0b111, 0b100, 0b100, 0b100, 0b111],
-        'D' => [0b110, 0b101, 0b101, 0b101, 0b110],
-        'E' => [0b111, 0b100, 0b110, 0b100, 0b111],
-        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
-        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
-        '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
-        '3' => [0b111, 0b001, 0b111, 0b001, 0b111],
-        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
-        '5' => [0b111, 0b100, 0b111, 0b001, 0b111],
-        '6' => [0b111, 0b100, 0b111, 0b101, 0b111],
-        '7' => [0b111, 0b001, 0b001, 0b001, 0b001],
-        '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
-        '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
-        'F' => [0b111, 0b100, 0b110, 0b100, 0b100],
-        'G' => [0b111, 0b100, 0b101, 0b101, 0b111],
-        'H' => [0b101, 0b101, 0b111, 0b101, 0b101],
-        'I' => [0b111, 0b010, 0b010, 0b010, 0b111],
-        'J' => [0b001, 0b001, 0b001, 0b101, 0b111],
-        'K' => [0b101, 0b101, 0b110, 0b101, 0b101],
-        'L' => [0b100, 0b100, 0b100, 0b100, 0b111],
-        'M' => [0b101, 0b111, 0b111, 0b101, 0b101],
-        'N' => [0b101, 0b111, 0b111, 0b111, 0b101],
-        'O' => [0b111, 0b101, 0b101, 0b101, 0b111],
-        'P' => [0b110, 0b101, 0b110, 0b100, 0b100],
-        'Q' => [0b111, 0b101, 0b101, 0b111, 0b001],
-        'R' => [0b110, 0b101, 0b110, 0b101, 0b101],
-        'S' => [0b111, 0b100, 0b111, 0b001, 0b111],
-        'T' => [0b111, 0b010, 0b010, 0b010, 0b010],
-        'U' => [0b101, 0b101, 0b101, 0b101, 0b111],
-        'V' => [0b101, 0b101, 0b101, 0b101, 0b010],
-        'W' => [0b101, 0b101, 0b101, 0b111, 0b101],
-        'X' => [0b101, 0b101, 0b010, 0b101, 0b101],
-        'Y' => [0b101, 0b101, 0b010, 0b010, 0b010],
-        'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
-        ':' => [0b000, 0b010, 0b000, 0b010, 0b000],
-        ';' => [0b000, 0b010, 0b000, 0b010, 0b100],
-        ',' => [0b000, 0b000, 0b000, 0b010, 0b100],
-        '!' => [0b010, 0b010, 0b010, 0b000, 0b010],
-        '?' => [0b111, 0b001, 0b011, 0b000, 0b010],
-        '<' => [0b001, 0b010, 0b100, 0b010, 0b001],
-        '>' => [0b100, 0b010, 0b001, 0b010, 0b100],
-        '[' => [0b110, 0b100, 0b100, 0b100, 0b110],
-        ']' => [0b011, 0b001, 0b001, 0b001, 0b011],
-        '/' => [0b001, 0b001, 0b010, 0b100, 0b100],
-        '=' => [0b000, 0b111, 0b000, 0b111, 0b000],
-        '_' => [0b000, 0b000, 0b000, 0b000, 0b111],
-        '\'' => [0b010, 0b010, 0b000, 0b000, 0b000],
-        '"' => [0b101, 0b101, 0b000, 0b000, 0b000],
-        '(' => [0b010, 0b100, 0b100, 0b100, 0b010],
-        ')' => [0b010, 0b001, 0b001, 0b001, 0b010],
-        '+' => [0b000, 0b010, 0b111, 0b010, 0b000],
-        '&' => [0b110, 0b101, 0b010, 0b101, 0b110],
-        '.' => [0b000, 0b000, 0b000, 0b000, 0b010],
-        '-' => [0b000, 0b000, 0b111, 0b000, 0b000],
-        ' ' => [0b000, 0b000, 0b000, 0b000, 0b000],
-        _ => [0b111, 0b101, 0b111, 0b101, 0b111],
+        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+        'C' => [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
+        'D' => [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+        'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+        'F' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+        'G' => [0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
+        'H' => [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        'I' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+        'J' => [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+        'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+        'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+        'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
+        'N' => [0b10001, 0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001],
+        'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+        'Q' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
+        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+        'W' => [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+        'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+        'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+        'Z' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+        '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+        '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+        '2' => [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
+        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+        '5' => [0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110],
+        '6' => [0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+        '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+        '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+        '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
+        '<' => [0b00001, 0b00010, 0b00100, 0b01000, 0b00100, 0b00010, 0b00001],
+        '>' => [0b10000, 0b01000, 0b00100, 0b00010, 0b00100, 0b01000, 0b10000],
+        '/' => [0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000],
+        ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
+        ';' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b01000],
+        ',' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00100, 0b01000],
+        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100],
+        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        '_' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b11111],
+        '=' => [0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        '\'' => [0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000],
+        '"' => [0b01010, 0b01010, 0b10001, 0b00000, 0b00000, 0b00000, 0b00000],
+        '(' => [0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
+        ')' => [0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
+        '[' => [0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110],
+        ']' => [0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110],
+        '+' => [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
+        '!' => [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00000, 0b00100],
+        '?' => [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b00000, 0b00100],
+        '&' => [0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101],
+        ' ' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+        _ => [0b00000, 0b00000, 0b01110, 0b00010, 0b00100, 0b00000, 0b00100],
     }
 }
 

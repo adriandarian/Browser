@@ -103,10 +103,6 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
       event.kind = PLATFORM_EVENT_KEY_DOWN;
       if (wparam == VK_ESCAPE) {
         event.key_code = PLATFORM_KEY_ESCAPE;
-      } else if (wparam == VK_SPACE) {
-        event.key_code = PLATFORM_KEY_SPACE;
-      } else if (wparam == 'H' || wparam == 'h') {
-        event.key_code = PLATFORM_KEY_H;
       } else {
         event.key_code = PLATFORM_KEY_UNKNOWN;
       }
@@ -116,10 +112,6 @@ static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
       event.kind = PLATFORM_EVENT_KEY_UP;
       if (wparam == VK_ESCAPE) {
         event.key_code = PLATFORM_KEY_ESCAPE;
-      } else if (wparam == VK_SPACE) {
-        event.key_code = PLATFORM_KEY_SPACE;
-      } else if (wparam == 'H' || wparam == 'h') {
-        event.key_code = PLATFORM_KEY_H;
       } else {
         event.key_code = PLATFORM_KEY_UNKNOWN;
       }

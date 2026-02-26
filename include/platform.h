@@ -29,8 +29,13 @@ enum platform_event_kind {
 enum platform_key_code {
   PLATFORM_KEY_UNKNOWN = 0,
   PLATFORM_KEY_ESCAPE = 27,
+  PLATFORM_KEY_ENTER = 13,
   PLATFORM_KEY_SPACE = 32,
+  PLATFORM_KEY_F = 70,
   PLATFORM_KEY_H = 72,
+  PLATFORM_KEY_J = 74,
+  PLATFORM_KEY_K = 75,
+  PLATFORM_KEY_S = 83,
 };
 
 typedef struct platform_config {

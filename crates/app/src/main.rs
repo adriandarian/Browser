@@ -7,7 +7,7 @@ use ipc::{BrowserToContent, InProcessTransport};
 use platform_abi::{
     PlatformConfig, PlatformEvent, PlatformFrame, PLATFORM_ABI_VERSION, PLATFORM_EVENT_KEY_DOWN,
     PLATFORM_EVENT_QUIT, PLATFORM_EVENT_RESIZE, PLATFORM_FALSE, PLATFORM_KEY_ESCAPE,
-    PLATFORM_KEY_H, PLATFORM_KEY_SPACE,
+    PLATFORM_KEY_S,
 };
 use renderer::{DrawRect, DrawText, OverlayInfo, Pattern, Renderer};
 use script_host::{ScriptError, ScriptHost, StubScriptHost};
@@ -62,6 +62,12 @@ struct DocumentScene {
     html: String,
     rects: Vec<DrawRect>,
     texts: Vec<DrawText>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CustomizationState {
+    open: bool,
+    selected_font_index: usize,
 }
 
 static SCRIPT_HOST_UNSUPPORTED_WARNED: AtomicBool = AtomicBool::new(false);
@@ -282,7 +288,16 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
 
     let mut renderer = Renderer::new(width, height);
     renderer.set_pattern(args.pattern);
-    let mut overlay_enabled = true;
+    let overlay_enabled = true;
+    let mut customization = CustomizationState {
+        open: false,
+        selected_font_index: renderer.current_font_index(),
+    };
+    info!(
+        current_font = renderer.current_font_name(),
+        total_fonts = renderer.font_count(),
+        "font catalog ready"
+    );
 
     let mut scheduler = Scheduler::new(60).with_max_updates_per_frame(4);
     let mut last_tick = Instant::now();
@@ -311,18 +326,14 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
             let event = unsafe { event.assume_init() };
             match event.kind {
                 PLATFORM_EVENT_QUIT => running = false,
-                PLATFORM_EVENT_KEY_DOWN if event.key_code == PLATFORM_KEY_ESCAPE => running = false,
                 PLATFORM_EVENT_KEY_DOWN => {
-                    if event.key_code == PLATFORM_KEY_SPACE {
-                        let next = renderer.pattern().next();
-                        renderer.set_pattern(next);
-                        info!(?next, "pattern toggled");
-                    } else if event.key_code == PLATFORM_KEY_H {
-                        overlay_enabled = !overlay_enabled;
-                        info!(
-                            overlay_enabled,
-                            "help overlay toggled (Esc=quit, Space=pattern, H=overlay)"
-                        );
+                    if customization.open {
+                        if event.key_code == PLATFORM_KEY_ESCAPE {
+                            customization.open = false;
+                        }
+                    } else if event.key_code == PLATFORM_KEY_S {
+                        customization.open = true;
+                        customization.selected_font_index = renderer.current_font_index();
                     }
                 }
                 PLATFORM_EVENT_RESIZE => {
@@ -365,11 +376,27 @@ fn run_windowed(args: RunArgs) -> Result<(), String> {
         let overlay = overlay_enabled.then_some(overlay);
 
         let framebuffer = if let Some(scene) = &document_scene {
+            let (rects, texts) = if customization.open {
+                let (popup_rects, popup_texts) = build_customization_popup(
+                    &renderer,
+                    width,
+                    height,
+                    customization.selected_font_index,
+                );
+                let mut merged_rects = scene.rects.clone();
+                let mut merged_texts = scene.texts.clone();
+                merged_rects.extend(popup_rects);
+                merged_texts.extend(popup_texts);
+                (merged_rects, merged_texts)
+            } else {
+                (scene.rects.clone(), scene.texts.clone())
+            };
+
             renderer.render_display_list(
                 timing.frame_index,
                 time_seconds,
-                &scene.rects,
-                &scene.texts,
+                &rects,
+                &texts,
                 overlay,
             )
         } else {
@@ -602,6 +629,99 @@ fn display_commands_to_scene(commands: &[DisplayCommand]) -> (Vec<DrawRect>, Vec
             }
         }
     }
+    (rects, texts)
+}
+
+fn build_customization_popup(
+    renderer: &Renderer,
+    width: u32,
+    height: u32,
+    selected_font_index: usize,
+) -> (Vec<DrawRect>, Vec<DrawText>) {
+    let panel_margin = 24_i32;
+    let panel_width = (width as i32 - panel_margin * 2).clamp(420, 760);
+    let panel_height = (height as i32 - panel_margin * 2).clamp(280, 560);
+    let panel_x = ((width as i32 - panel_width) / 2).max(8);
+    let panel_y = ((height as i32 - panel_height) / 2).max(8);
+
+    let mut rects = Vec::new();
+    let mut texts = Vec::new();
+
+    rects.push(DrawRect {
+        x: panel_x,
+        y: panel_y,
+        width: panel_width,
+        height: panel_height,
+        color: [18, 22, 34, 255],
+    });
+    rects.push(DrawRect {
+        x: panel_x + 2,
+        y: panel_y + 2,
+        width: panel_width - 4,
+        height: panel_height - 4,
+        color: [25, 31, 47, 255],
+    });
+    rects.push(DrawRect {
+        x: panel_x + 2,
+        y: panel_y + 2,
+        width: panel_width - 4,
+        height: 42,
+        color: [37, 54, 88, 255],
+    });
+
+    texts.push(DrawText {
+        x: panel_x + 14,
+        y: panel_y + 12,
+        text: "Customization".to_string(),
+        color: [236, 242, 255, 255],
+        scale: 2,
+    });
+    texts.push(DrawText {
+        x: panel_x + 14,
+        y: panel_y + 28,
+        text: "Use menu: View > Settings. Esc closes panel.".to_string(),
+        color: [205, 216, 240, 255],
+        scale: 1,
+    });
+
+    let total_fonts = renderer.font_count();
+    let selected = selected_font_index.min(total_fonts.saturating_sub(1));
+    let visible_rows = ((panel_height - 82) / 24).max(5) as usize;
+    let max_start = total_fonts.saturating_sub(visible_rows);
+    let start = selected.saturating_sub(visible_rows / 2).min(max_start);
+    let end = (start + visible_rows).min(total_fonts);
+
+    for (row, font_index) in (start..end).enumerate() {
+        let row_y = panel_y + 52 + (row as i32 * 24);
+        if font_index == selected {
+            rects.push(DrawRect {
+                x: panel_x + 10,
+                y: row_y - 2,
+                width: panel_width - 20,
+                height: 22,
+                color: [78, 117, 196, 255],
+            });
+        }
+
+        let marker = if renderer.current_font_index() == font_index {
+            "*"
+        } else {
+            " "
+        };
+        let name = renderer.font_name(font_index).unwrap_or("Unknown");
+        texts.push(DrawText {
+            x: panel_x + 16,
+            y: row_y + 2,
+            text: format!("{marker} {:>4}  {name}", font_index),
+            color: if font_index == selected {
+                [245, 249, 255, 255]
+            } else {
+                [211, 224, 252, 255]
+            },
+            scale: 1,
+        });
+    }
+
     (rects, texts)
 }
 

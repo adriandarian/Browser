@@ -186,6 +186,75 @@ static void enqueue_quit_if_needed(void) {
 @end
 
 static BrowserWindowDelegate *g_window_delegate = nil;
+static id g_menu_target = nil;
+
+static void push_key_event(uint32_t key_code) {
+  platform_event event;
+  memset(&event, 0, sizeof(event));
+  event.struct_size = sizeof(platform_event);
+  event.kind = PLATFORM_EVENT_KEY_DOWN;
+  event.key_code = key_code;
+  push_event(&event);
+}
+
+@interface BrowserMenuTarget : NSObject
+- (void)openSettings:(id)sender;
+@end
+
+@implementation BrowserMenuTarget
+- (void)openSettings:(id)sender {
+  (void)sender;
+  push_key_event(PLATFORM_KEY_S);
+}
+@end
+
+static void setup_app_menu(void) {
+  NSMenu *menubar = [[NSMenu alloc] initWithTitle:@""];
+
+  NSMenuItem *app_root = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+  [menubar addItem:app_root];
+
+  NSMenuItem *file_root = [[NSMenuItem alloc] initWithTitle:@"File" action:nil keyEquivalent:@""];
+  [menubar addItem:file_root];
+
+  NSMenuItem *view_root = [[NSMenuItem alloc] initWithTitle:@"View" action:nil keyEquivalent:@""];
+  [menubar addItem:view_root];
+
+  NSMenuItem *help_root = [[NSMenuItem alloc] initWithTitle:@"Help" action:nil keyEquivalent:@""];
+  [menubar addItem:help_root];
+
+  NSMenu *app_menu = [[NSMenu alloc] initWithTitle:@"browser"];
+  NSString *quit_title = [NSString stringWithFormat:@"Quit %@", [NSProcessInfo processInfo].processName];
+  NSMenuItem *quit_item = [[NSMenuItem alloc] initWithTitle:quit_title
+                                                      action:@selector(terminate:)
+                                               keyEquivalent:@"q"];
+  [app_menu addItem:quit_item];
+  [app_root setSubmenu:app_menu];
+
+  NSMenu *file_menu = [[NSMenu alloc] initWithTitle:@"File"];
+  [file_menu addItem:[[NSMenuItem alloc] initWithTitle:@"Close Window"
+                                                 action:@selector(performClose:)
+                                          keyEquivalent:@"w"]];
+  [file_root setSubmenu:file_menu];
+
+  g_menu_target = [[BrowserMenuTarget alloc] init];
+
+  NSMenu *view_menu = [[NSMenu alloc] initWithTitle:@"View"];
+  NSMenuItem *settings_item = [[NSMenuItem alloc] initWithTitle:@"Settings..."
+                                                          action:@selector(openSettings:)
+                                                   keyEquivalent:@""];
+  [settings_item setTarget:g_menu_target];
+  [view_menu addItem:settings_item];
+  [view_root setSubmenu:view_menu];
+
+  NSMenu *help_menu = [[NSMenu alloc] initWithTitle:@"Help"];
+  [help_menu addItem:[[NSMenuItem alloc] initWithTitle:@"Open View > Settings for customization"
+                                                 action:nil
+                                          keyEquivalent:@""]];
+  [help_root setSubmenu:help_menu];
+
+  [NSApp setMainMenu:menubar];
+}
 
 uint32_t platform_get_abi_version(void) { return PLATFORM_ABI_VERSION; }
 
@@ -199,6 +268,7 @@ uint8_t platform_init_window(const platform_config *config) {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     [NSApp finishLaunching];
+    setup_app_menu();
 
     NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                        NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable;
@@ -257,19 +327,6 @@ uint8_t platform_poll_event(platform_event *out_event) {
         uint32_t key_code = PLATFORM_KEY_UNKNOWN;
         if ([event keyCode] == 53) {
           key_code = PLATFORM_KEY_ESCAPE;
-        } else {
-          NSString *chars = [event charactersIgnoringModifiers];
-          if ([chars length] > 0) {
-            unichar ch = [chars characterAtIndex:0];
-            if (ch >= 'a' && ch <= 'z') {
-              ch = (unichar)(ch - ('a' - 'A'));
-            }
-            if (ch == ' ') {
-              key_code = PLATFORM_KEY_SPACE;
-            } else if (ch == 'H') {
-              key_code = PLATFORM_KEY_H;
-            }
-          }
         }
 
         platform_event next;
